@@ -48,6 +48,7 @@ def main(config: Config):
     logging.info("Arguments:\n%s", pprint.pformat(info))
 
     wandb.init(
+        entity=config.run.wandb_entity,
         project=config.run.wandb_project_name,
         group=config.run.wandb_group,
         name=config.run.exp_name,
@@ -111,7 +112,7 @@ def cli():
         config=(
             tyro.conf.OmitArgPrefixes,
             tyro.conf.OmitSubcommandPrefixes,
-            tyro.conf.ConsolidateSubcommandArgs,
+            tyro.conf.CascadeSubcommandArgs,
         ),
     )
 

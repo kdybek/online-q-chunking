@@ -65,8 +65,9 @@ class RunConfig:
     # wandb logging
     exp_name: str = "run"
     log_wandb: bool = True
-    wandb_project_name: str = "jaxgcrl"
-    wandb_group: str = "."
+    wandb_entity: Optional[str] = "cl-probing"
+    wandb_project_name: str = "online-q-chunking"
+    wandb_group: str = "debug"
 
     # online or offline
     wandb_mode: Literal["online", "offline"] = "online"
