@@ -10,10 +10,13 @@
 #SBATCH --output=setup.out
 #SBATCH --error=setup.err
 
-module load Python/3.11.5
-module load CUDA/12.9.1
+ml Python/3.11.5
+ml CUDA/12.8.0
+cuDNN/8.9.7.29-CUDA-12.8.0
 
 export XDG_CACHE_HOME=$SCRATCH/.cache
+export CUDA_HOME=$EBROOTCUDA
+export CUDNN_HOME=$EBROOTCUDNN
 
 cd $SCRATCH
 mkdir -p online-q-chunking
@@ -22,4 +25,22 @@ cp -rf ~/online-q-chunking/* .
 python -m venv .venv
 source .venv/bin/activate
 
-pip install -e . -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# wget https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 -O bazel
+# chmod +x bazel
+# export PATH="$PWD:$PATH"
+# export USE_BAZEL_VERSION=6.1.2
+
+wget https://github.com/jax-ml/jax/archive/refs/tags/jaxlib-v0.4.25.zip
+unzip jaxlib-v0.4.25.zip
+cd jax-jaxlib-v0.4.25
+
+python build/build.py \
+  --enable_cuda \
+  --cuda_path=$CUDA_HOME \
+  --cudnn_path=$CUDNN_HOME \
+  --cuda_version=12 \
+  --cudnn_version=8
+
+pip install dist/jaxlib-*.whl
+
+pip install -e .
