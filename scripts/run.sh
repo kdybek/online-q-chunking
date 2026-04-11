@@ -10,6 +10,8 @@
 #SBATCH --output=baseline.out
 #SBATCH --error=baseline.err
 
+module load CUDA/12.9.1
+
 export XDG_CACHE_HOME=$SCRATCH/.cache
 export WANDB_API_KEY=$(cat ~/.wandb_key)
 export MUJOCO_GL=egl
@@ -18,4 +20,4 @@ cd $SCRATCH/online-q-chunking
 cp -rf ~/online-q-chunking/* .
 source .venv/bin/activate
 
-python run.py crl --env ant
+jaxgcrl crl --env ant

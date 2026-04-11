@@ -10,6 +10,9 @@
 #SBATCH --output=setup.out
 #SBATCH --error=setup.err
 
+module load Python/3.11.5
+module load CUDA/12.9.1
+
 export XDG_CACHE_HOME=$SCRATCH/.cache
 
 cd $SCRATCH
