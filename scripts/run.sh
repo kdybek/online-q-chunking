@@ -4,13 +4,15 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
-#SBATCH --time=10:00:00
+#SBATCH --time=1:00:00
 #SBATCH --account=plgcrlreason-gpu-gh200
 #SBATCH --partition=plgrid-gpu-gh200
 #SBATCH --output=baseline.out
 #SBATCH --error=baseline.err
 
-module load CUDA/12.9.1
+ml Python/3.11.5
+ml CUDA/12.8.0
+ml cuDNN/8.9.7.29-CUDA-12.8.0
 
 export XDG_CACHE_HOME=$SCRATCH/.cache
 export WANDB_API_KEY=$(cat ~/.wandb_key)
