@@ -365,7 +365,7 @@ class CRL:
                 x: final_state.info[x] for x in extra_fields
             }
 
-            rew = jnp.reshape(states.rewards, (69, 69))  # debug
+            rew = jnp.reshape(states.reward, (69, 69))  # debug
             rewards = jnp.sum(states.reward, axis=0)
             dones = jnp.any(states.done, axis=0)
 
@@ -408,7 +408,7 @@ class CRL:
                 x: final_state.info[x] for x in extra_fields
             }
 
-            rew = jnp.reshape(states.rewards, (69, 69))  # debug
+            rew = jnp.reshape(states.reward, (69, 69))  # debug
             rewards = jnp.sum(states.reward, axis=0)
             dones = jnp.any(states.done, axis=0)
 
