@@ -365,9 +365,7 @@ class CRL:
                 x: final_state.info[x] for x in extra_fields
             }
 
-            jax.debug.print("states.reward shape: {shape}", shape=states.reward.shape)
-            jax.debug.print("states.done shape: {shape}", shape=states.done.shape)
-            raise NotImplementedError("debug")
+            rew = jnp.reshape(states.rewards, (69, 69))  # debug
             rewards = jnp.sum(states.reward, axis=0)
             dones = jnp.any(states.done, axis=0)
 
@@ -410,9 +408,7 @@ class CRL:
                 x: final_state.info[x] for x in extra_fields
             }
 
-            jax.debug.print("states.reward shape: {shape}", shape=states.reward.shape)
-            jax.debug.print("states.done shape: {shape}", shape=states.done.shape)
-            raise NotImplementedError("debug")
+            rew = jnp.reshape(states.rewards, (69, 69))  # debug
             rewards = jnp.sum(states.reward, axis=0)
             dones = jnp.any(states.done, axis=0)
 
