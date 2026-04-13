@@ -15,8 +15,6 @@ ml CUDA/12.8.0
 ml cuDNN/8.9.7.29-CUDA-12.8.0
 
 export XDG_CACHE_HOME=$SCRATCH/.cache
-export CUDA_HOME=$EBROOTCUDA
-export CUDNN_HOME=$EBROOTCUDNN
 
 cd $SCRATCH
 mkdir -p online-q-chunking

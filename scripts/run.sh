@@ -20,6 +20,14 @@ export MUJOCO_GL=egl
 
 cd $SCRATCH/online-q-chunking
 cp -rf ~/online-q-chunking/* .
-source .venv/bin/activate
 
-jaxgcrl crl --env ant
+VENV=".venv_$SLURM_JOB_ID"
+python -m venv $VENV
+source $VENV/bin/activate
+
+pip install -e . -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+
+jaxgcrl crl --env ant --action_chunk_length 1 &
+wait
+
+rm -rf $VENV
