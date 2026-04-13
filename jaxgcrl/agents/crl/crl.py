@@ -339,7 +339,14 @@ class CRL:
             means, _ = actor.apply(training_state.actor_state.params, env_state.obs)
 
             action_chunk = jnp.tanh(means)
-            actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
+
+            if action_chunk.ndim == 2:
+                actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
+            elif action_chunk.ndim == 3:
+                actions = jnp.reshape(action_chunk, (-1, self.action_chunk_length, action_size))
+                actions = jnp.transpose(actions, (1, 0, 2))
+            else:
+                raise ValueError("unexpected action_chunk ndim")
 
             def step_fn(carry, action):
                 nstate = carry
@@ -358,14 +365,17 @@ class CRL:
                 x: final_state.info[x] for x in extra_fields
             }
 
-            reward = jnp.sum(states.reward)
-            done = jnp.any(states.done)
+            jax.debug.print("states.reward shape: {shape}", shape=states.reward.shape)
+            jax.debug.print("states.done shape: {shape}", shape=states.done.shape)
+            raise NotImplementedError("debug")
+            rewards = jnp.sum(states.reward, axis=0)
+            dones = jnp.any(states.done, axis=0)
 
             return final_state, Transition(
                 observation=env_state.obs,
                 action=action_chunk,
-                reward=reward,
-                discount=1 - done,
+                reward=rewards,
+                discount=1 - dones,
                 extras={"state_extras": state_extras},
             )
 
@@ -374,7 +384,14 @@ class CRL:
 
             stds = jnp.exp(log_stds)
             action_chunk = nn.tanh(means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype))
-            actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
+
+            if action_chunk.ndim == 2:
+                actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
+            elif action_chunk.ndim == 3:
+                actions = jnp.reshape(action_chunk, (-1, self.action_chunk_length, action_size))
+                actions = jnp.transpose(actions, (1, 0, 2))
+            else:
+                raise ValueError("unexpected action_chunk ndim")
 
             def step_fn(carry, action):
                 nstate = carry
@@ -393,14 +410,17 @@ class CRL:
                 x: final_state.info[x] for x in extra_fields
             }
 
-            reward = jnp.sum(states.reward)
-            done = jnp.any(states.done)
+            jax.debug.print("states.reward shape: {shape}", shape=states.reward.shape)
+            jax.debug.print("states.done shape: {shape}", shape=states.done.shape)
+            raise NotImplementedError("debug")
+            rewards = jnp.sum(states.reward, axis=0)
+            dones = jnp.any(states.done, axis=0)
 
             return final_state, Transition(
                 observation=env_state.obs,
                 action=action_chunk,
-                reward=reward,
-                discount=1 - done,
+                reward=rewards,
+                discount=1 - dones,
                 extras={"state_extras": state_extras},
             )
 
