@@ -340,9 +340,9 @@ class CRL:
 
             action_chunk = jnp.tanh(means)
 
-            if action_chunk.ndim == 2:
+            if action_chunk.ndim == 1:
                 actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
-            elif action_chunk.ndim == 3:
+            elif action_chunk.ndim == 2:
                 actions = jnp.reshape(action_chunk, (-1, self.action_chunk_length, action_size))
                 actions = jnp.transpose(actions, (1, 0, 2))
             else:
@@ -385,9 +385,9 @@ class CRL:
             stds = jnp.exp(log_stds)
             action_chunk = nn.tanh(means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype))
 
-            if action_chunk.ndim == 2:
+            if action_chunk.ndim == 1:
                 actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
-            elif action_chunk.ndim == 3:
+            elif action_chunk.ndim == 2:
                 actions = jnp.reshape(action_chunk, (-1, self.action_chunk_length, action_size))
                 actions = jnp.transpose(actions, (1, 0, 2))
             else:
