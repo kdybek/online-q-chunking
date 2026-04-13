@@ -162,6 +162,8 @@ class CRL:
     contrastive_loss_fn: Literal["fwd_infonce", "sym_infonce", "bwd_infonce", "binary_nce"] = "fwd_infonce"
     energy_fn: Literal["norm", "l2", "dot", "cosine"] = "norm"
 
+    action_chunk_length: int = 1
+
     def check_config(self, config):
         """
         episode_length: the maximum length of an episode
@@ -234,6 +236,7 @@ class CRL:
 
         # Dimensions definitions and sanity checks
         action_size = train_env.action_size
+        flat_action_chunk_size = self.action_chunk_length * action_size
         state_size = train_env.state_dim
         goal_size = len(train_env.goal_indices)
         obs_size = state_size + goal_size
@@ -244,7 +247,7 @@ class CRL:
         # Network setup
         # Actor
         actor = Actor(
-            action_size=action_size,
+            action_size=flat_action_chunk_size,
             network_width=self.h_dim,
             network_depth=self.n_hidden,
             skip_connections=self.skip_connections,
@@ -265,7 +268,7 @@ class CRL:
             use_relu=self.use_relu,
             use_ln=self.use_ln,
         )
-        sa_encoder_params = sa_encoder.init(sa_key, np.ones([1, state_size + action_size]))
+        sa_encoder_params = sa_encoder.init(sa_key, np.ones([1, state_size + flat_action_chunk_size]))
         g_encoder = Encoder(
             repr_dim=self.repr_dim,
             network_width=self.h_dim,
@@ -282,7 +285,7 @@ class CRL:
         )
 
         # Entropy coefficient
-        target_entropy = -0.5 * action_size
+        target_entropy = -0.5 * flat_action_chunk_size
         log_alpha = jnp.asarray(0.0, dtype=jnp.float32)
         alpha_state = TrainState.create(
             apply_fn=None,
@@ -301,7 +304,7 @@ class CRL:
 
         # Replay Buffer
         dummy_obs = jnp.zeros((obs_size,))
-        dummy_action = jnp.zeros((action_size,))
+        dummy_action = jnp.zeros((flat_action_chunk_size,))
 
         dummy_transition = Transition(
             observation=dummy_obs,
@@ -334,32 +337,70 @@ class CRL:
 
         def deterministic_actor_step(training_state, env, env_state, extra_fields):
             means, _ = actor.apply(training_state.actor_state.params, env_state.obs)
-            actions = nn.tanh(means)
 
-            nstate = env.step(env_state, actions)
-            state_extras = {x: nstate.info[x] for x in extra_fields}
+            action_chunk = jnp.tanh(means)
+            actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
 
-            return nstate, Transition(
+            def step_fn(carry, action):
+                nstate = carry
+
+                new_state = env.step(nstate, action)
+
+                return new_state, new_state
+
+            final_state, states = jax.lax.scan(
+                step_fn,
+                env_state,
+                actions
+            )
+
+            state_extras = {
+                x: final_state.info[x] for x in extra_fields
+            }
+
+            reward = jnp.sum(states.reward)
+            done = jnp.any(states.done)
+
+            return final_state, Transition(
                 observation=env_state.obs,
-                action=actions,
-                reward=nstate.reward,
-                discount=1 - nstate.done,
+                action=action_chunk,
+                reward=reward,
+                discount=1 - done,
                 extras={"state_extras": state_extras},
             )
 
         def actor_step(actor_state, env, env_state, key, extra_fields):
             means, log_stds = actor.apply(actor_state.params, env_state.obs)
+
             stds = jnp.exp(log_stds)
-            actions = nn.tanh(means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype))
+            action_chunk = nn.tanh(means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype))
+            actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
 
-            nstate = env.step(env_state, actions)
-            state_extras = {x: nstate.info[x] for x in extra_fields}
+            def step_fn(carry, action):
+                nstate = carry
 
-            return nstate, Transition(
+                new_state = env.step(nstate, action)
+
+                return new_state, new_state
+
+            final_state, states = jax.lax.scan(
+                step_fn,
+                env_state,
+                actions
+            )
+
+            state_extras = {
+                x: final_state.info[x] for x in extra_fields
+            }
+
+            reward = jnp.sum(states.reward)
+            done = jnp.any(states.done)
+
+            return final_state, Transition(
                 observation=env_state.obs,
-                action=actions,
-                reward=nstate.reward,
-                discount=1 - nstate.done,
+                action=action_chunk,
+                reward=reward,
+                discount=1 - done,
                 extras={"state_extras": state_extras},
             )
 
@@ -416,7 +457,7 @@ class CRL:
                 **vars(self),
                 **vars(config),
                 state_size=state_size,
-                action_size=action_size,
+                action_size=flat_action_chunk_size,
                 goal_size=goal_size,
                 obs_size=obs_size,
                 goal_indices=train_env.goal_indices,
