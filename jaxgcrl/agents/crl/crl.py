@@ -287,7 +287,7 @@ class CRL:
         )
 
         # Entropy coefficient
-        target_entropy = -0.5 * flat_action_chunk_size
+        target_entropy = -0.5 * action_size
         log_alpha = jnp.asarray(0.0, dtype=jnp.float32)
         alpha_state = TrainState.create(
             apply_fn=None,
