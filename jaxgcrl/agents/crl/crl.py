@@ -147,7 +147,7 @@ class CRL:
 
     max_replay_size: int = 10000
     min_replay_size: int = 1000
-    unroll_length: int = 62
+    unroll_length: int = 75
     h_dim: int = 256
     n_hidden: int = 2
     skip_connections: int = 4
@@ -202,8 +202,8 @@ class CRL:
         )
 
         chunked_unroll_length = np.ceil(self.unroll_length / self.action_chunk_length)
-        self.unroll_length = chunked_unroll_length * self.action_chunk_length
-        env_steps_per_actor_step = config.num_envs * self.unroll_length
+        true_unroll_length = chunked_unroll_length * self.action_chunk_length
+        env_steps_per_actor_step = config.num_envs * true_unroll_length
         num_prefill_env_steps = self.min_replay_size * config.num_envs
         num_prefill_actor_steps = np.ceil(self.min_replay_size / chunked_unroll_length)
         num_training_steps_per_epoch = np.ceil(
