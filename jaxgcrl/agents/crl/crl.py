@@ -332,7 +332,7 @@ class CRL:
                 dummy_data_sample=dummy_transition,
                 sample_batch_size=self.batch_size,
                 num_envs=config.num_envs,
-                episode_length=config.episode_length,
+                episode_length=np.ceil(config.episode_length / self.action_chunk_length).astype(int),
             )
         )
         buffer_state = jax.jit(replay_buffer.init)(buffer_key)
@@ -598,7 +598,7 @@ class CRL:
             deterministic_actor_step,
             eval_env,
             num_eval_envs=config.num_eval_envs,
-            episode_length=config.episode_length,
+            episode_length=np.ceil(config.episode_length / self.action_chunk_length).astype(int),
             key=eval_env_key,
         )
 
