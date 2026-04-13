@@ -49,10 +49,10 @@ class RunConfig:
     eval_env: Optional[Literal[legal_envs]] = None
 
     # number of envs to run in parallel during training
-    num_envs: int = 256
+    num_envs: int = 512
 
     # number of envs to run in parallel during evaluation
-    num_eval_envs: int = 256
+    num_eval_envs: int = 512
 
     action_repeat: int = 1
 

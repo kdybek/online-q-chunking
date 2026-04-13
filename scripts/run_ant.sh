@@ -4,11 +4,11 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
-#SBATCH --time=1:00:00
+#SBATCH --time=8:00:00
 #SBATCH --account=plgcrlreason-gpu-gh200
 #SBATCH --partition=plgrid-gpu-gh200
-#SBATCH --output=baseline.out
-#SBATCH --error=baseline.err
+#SBATCH --output=logs/%x_%j.out
+#SBATCH --error=logs/%x_%j.err
 
 ml Python/3.11.5
 ml CUDA/12.8.0
@@ -27,7 +27,15 @@ source $VENV/bin/activate
 
 pip install -e . -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 
-jaxgcrl crl --env ant --action_chunk_length 1 &
-wait
+for seed in 0 1 2; do
+    for action_chunk_length in 1 3 5; do
+        jaxgcrl crl \
+            --env ant \
+            --action_chunk_length $action_chunk_length \
+            --seed $seed \
+            --wandb_group "online_q_chunking" \
+            --exp_name "ant_acl_${action_chunk_length}_seed_${seed}"
+    done
+done
 
 rm -rf $VENV
