@@ -201,9 +201,11 @@ class CRL:
             action_repeat=config.action_repeat,
         )
 
+        chunked_unroll_length = np.ceil(self.unroll_length / self.action_chunk_length)
+        self.unroll_length = chunked_unroll_length * self.action_chunk_length
         env_steps_per_actor_step = config.num_envs * self.unroll_length
         num_prefill_env_steps = self.min_replay_size * config.num_envs
-        num_prefill_actor_steps = np.ceil(self.min_replay_size / self.unroll_length)
+        num_prefill_actor_steps = np.ceil(self.min_replay_size / chunked_unroll_length)
         num_training_steps_per_epoch = np.ceil(
             (config.total_env_steps - num_prefill_env_steps) / (config.num_evals * env_steps_per_actor_step)
         )
@@ -433,7 +435,7 @@ class CRL:
                 )
                 return (env_state, next_key), transition
 
-            (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=self.unroll_length)
+            (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=chunked_unroll_length)
 
             buffer_state = replay_buffer.insert(buffer_state, data)
             return env_state, buffer_state
