@@ -50,6 +50,7 @@ class Encoder(nn.Module):
 
 class Actor(nn.Module):
     action_size: int
+    action_chunk_length: int
     network_width: int = 256
     network_depth: int = 4
     skip_connections: int = (
@@ -88,12 +89,16 @@ class Actor(nn.Module):
                     x = x + skip
                     skip = x
 
-        mean = nn.Dense(self.action_size, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
-        log_std = nn.Dense(self.action_size, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+        action_chunk_size = self.action_size * self.action_chunk_length
+        mean = nn.Dense(action_chunk_size, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
+        log_std = nn.Dense(action_chunk_size, kernel_init=lecun_unfirom, bias_init=bias_init)(x)
 
         log_std = nn.tanh(log_std)
         log_std = self.LOG_STD_MIN + 0.5 * (self.LOG_STD_MAX - self.LOG_STD_MIN) * (
             log_std + 1
         )  # From SpinUp / Denis Yarats
+
+        mean = mean.reshape(mean.shape[:-1] + (self.action_chunk_length, self.action_size))
+        log_std = log_std.reshape(log_std.shape[:-1] + (self.action_chunk_length, self.action_size))
 
         return mean, log_std

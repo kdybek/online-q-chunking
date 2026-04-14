@@ -34,8 +34,8 @@ def contrastive_loss_fn(name, logits):
 
 def update_actor_and_alpha(config, networks, transitions, training_state, key):
     def actor_loss(actor_params, critic_params, log_alpha, transitions, key):
-        obs = transitions.observation  # expected_shape = self.batch_size, obs_size + goal_size
-        state = obs[:, : config["state_size"]]
+        state = transitions.state
+        goal = transitions.goal
         future_state = transitions.extras["future_state"]
         goal = future_state[:, config["goal_indices"]]
         observation = jnp.concatenate([state, goal], axis=1)
@@ -97,12 +97,13 @@ def update_critic(config, networks, transitions, training_state, key):
             critic_params["g_encoder"],
         )
 
-        state = transitions.observation[:, : config["state_size"]]
+        state = transitions.state
+        goal = transitions.goal
         action = transitions.action
 
         sa_repr = networks["sa_encoder"].apply(sa_encoder_params, jnp.concatenate([state, action], axis=-1))
         g_repr = networks["g_encoder"].apply(
-            g_encoder_params, transitions.observation[:, config["state_size"] :]
+            g_encoder_params, goal
         )
 
         # InfoNCE

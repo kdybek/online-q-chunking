@@ -18,7 +18,7 @@ from flax.struct import dataclass
 from flax.training.train_state import TrainState
 
 from jaxgcrl.envs.wrappers import TrajectoryIdWrapper
-from jaxgcrl.utils.evaluator import ActorEvaluator
+from jaxgcrl.utils.evaluator import ChunkedActorEvaluator
 from jaxgcrl.utils.replay_buffer import TrajectoryUniformSamplingQueue
 
 from .losses import update_actor_and_alpha, update_critic
@@ -50,8 +50,16 @@ class Transition(NamedTuple):
     extras: jnp.ndarray = ()
 
 
-@functools.partial(jax.jit, static_argnames=("buffer_config"))
-def flatten_batch(buffer_config, transition, sample_key):
+class CriticTransition(NamedTuple):
+    """Container for a transition used for critic update"""
+    state: jnp.ndarray
+    goal: jnp.ndarray
+    flat_action_chunk: jnp.ndarray
+    extras: jnp.ndarray = ()
+
+
+@functools.partial(jax.jit, static_argnames=("buffer_config", "action_chunk_length"))
+def flatten_batch(buffer_config, transition, sample_key, action_chunk_length):
     gamma, state_size, goal_indices = buffer_config
 
     # Because it's vmaped transition.obs.shape is of shape (episode_len, obs_dim)
@@ -72,14 +80,17 @@ def flatten_batch(buffer_config, transition, sample_key):
     # assuming seq_len = 5
     # the same result can be obtained using probs = is_future_mask * (gamma ** jnp.cumsum(is_future_mask, axis=-1))
 
+    # array of seq_len x seq_len where a row is an array of traj_ids that correspond to the episode index from which that time-step was collected
+    # timesteps collected from the same episode will have the same traj_id. All rows of the single_trajectories are same.
     single_trajectories = jnp.concatenate(
         [transition.extras["state_extras"]["traj_id"][:, jnp.newaxis].T] * seq_len,
         axis=0,
     )
-    # array of seq_len x seq_len where a row is an array of traj_ids that correspond to the episode index from which that time-step was collected
-    # timesteps collected from the same episode will have the same traj_id. All rows of the single_trajectories are same.
 
-    probs = probs * jnp.equal(single_trajectories, single_trajectories.T) + jnp.eye(seq_len) * 1e-5
+    # matrix of shape seq_len, seq_len where entry is 1 if the corresponding time indices have the same traj_id and 0 otherwise
+    trajectory_mask = jnp.equal(single_trajectories, single_trajectories.T)
+
+    probs = probs * trajectory_mask + jnp.eye(seq_len) * 1e-5
     # ith row of probs will be non zero only for time indices that
     # 1) are greater than i
     # 2) have the same traj_id as the ith time index
@@ -92,7 +103,40 @@ def flatten_batch(buffer_config, transition, sample_key):
     goal = future_state[:, goal_indices]
     future_state = future_state[:, :state_size]
     state = transition.observation[:-1, :state_size]  # all states are considered
-    new_obs = jnp.concatenate([state, goal], axis=1)
+
+    # --- Gather action chunks for critic update ---
+    seq_len, action_size = transition.action.shape
+
+    # Indices for gathering action chunks
+    base_idx = jnp.arange(seq_len)[:, None]  # (seq_len, 1)
+    offsets = jnp.arange(action_chunk_length)[None, :]  # (1, action_chunk_length)
+    idx = base_idx + offsets  # (seq_len, action_chunk_length)
+
+    # Mask for valid indices (inside sequence)
+    valid_mask = idx < seq_len
+
+    # Clip indices to avoid OOB access
+    idx_clipped = jnp.clip(idx, 0, seq_len - 1)
+
+    # Gather actions
+    gathered_actions = transition.action[idx_clipped]  # (seq_len, action_chunk_length, action_size)
+
+    # Gather traj_ids
+    gathered_traj_ids = transition.extras["state_extras"]["traj_id"][idx_clipped]  # (seq_len, action_chunk_length)
+
+    # Compare traj_ids with the first one in each chunk
+    first_traj_ids = transition.extras["state_extras"]["traj_id"][:, None]  # (seq_len, 1)
+    same_traj_mask = gathered_traj_ids == first_traj_ids  # (seq_len, action_chunk_length)
+
+    mask = valid_mask & same_traj_mask  # (seq_len, action_chunk_length)
+
+    gathered_actions = jnp.where(
+        mask[..., None],
+        gathered_actions,
+        jnp.zeros_like(gathered_actions),
+    )
+
+    flat_action_chunk = jnp.reshape(gathered_actions, (seq_len, -1))[:-1]  # (seq_len-1, action_chunk_length * action_size)
 
     extras = {
         "policy_extras": {},
@@ -100,16 +144,14 @@ def flatten_batch(buffer_config, transition, sample_key):
             "truncation": jnp.squeeze(transition.extras["state_extras"]["truncation"][:-1]),
             "traj_id": jnp.squeeze(transition.extras["state_extras"]["traj_id"][:-1]),
         },
-        "state": state,
         "future_state": future_state,
         "future_action": future_action,
     }
 
-    return transition._replace(
-        observation=jnp.squeeze(new_obs),  # this has shape (num_envs, episode_length-1, obs_size)
-        action=jnp.squeeze(transition.action[:-1]),
-        reward=jnp.squeeze(transition.reward[:-1]),
-        discount=jnp.squeeze(transition.discount[:-1]),
+    return CriticTransition(
+        state=state,
+        goal=goal,
+        flat_action_chunk=flat_action_chunk,
         extras=extras,
     )
 
@@ -127,13 +169,15 @@ def save_params(path: str, params: Any):
 
 
 @dataclass
-class CRL:
-    """Contrastive Reinforcement Learning (CRL) agent."""
+class ACCRL:
+    """Contrastive Reinforcement Learning with Action Chunking (ACCRL) agent."""
 
     policy_lr: float = 3e-4
     critic_lr: float = 3e-4
     alpha_lr: float = 3e-4
     batch_size: int = 256
+
+    action_chunk_length: int = 3
 
     # gamma
     discounting: float = 0.99
@@ -147,7 +191,7 @@ class CRL:
 
     max_replay_size: int = 10000
     min_replay_size: int = 1000
-    unroll_length: int = 75
+    unroll_length: int = 62
     h_dim: int = 256
     n_hidden: int = 2
     skip_connections: int = 4
@@ -161,8 +205,6 @@ class CRL:
 
     contrastive_loss_fn: Literal["fwd_infonce", "sym_infonce", "bwd_infonce", "binary_nce"] = "fwd_infonce"
     energy_fn: Literal["norm", "l2", "dot", "cosine"] = "norm"
-
-    action_chunk_length: int = 1
 
     def check_config(self, config):
         """
@@ -201,11 +243,9 @@ class CRL:
             action_repeat=config.action_repeat,
         )
 
-        chunked_unroll_length = np.ceil(self.unroll_length / self.action_chunk_length)
-        true_unroll_length = chunked_unroll_length * self.action_chunk_length
-        env_steps_per_actor_step = config.num_envs * true_unroll_length
+        env_steps_per_actor_step = config.num_envs * self.unroll_length
         num_prefill_env_steps = self.min_replay_size * config.num_envs
-        num_prefill_actor_steps = np.ceil(self.min_replay_size / chunked_unroll_length)
+        num_prefill_actor_steps = np.ceil(self.min_replay_size / self.unroll_length)
         num_training_steps_per_epoch = np.ceil(
             (config.total_env_steps - num_prefill_env_steps) / (config.num_evals * env_steps_per_actor_step)
         )
@@ -238,7 +278,7 @@ class CRL:
 
         # Dimensions definitions and sanity checks
         action_size = train_env.action_size
-        flat_action_chunk_size = self.action_chunk_length * action_size
+        action_chunk_size = action_size * self.action_chunk_length
         state_size = train_env.state_dim
         goal_size = len(train_env.goal_indices)
         obs_size = state_size + goal_size
@@ -249,7 +289,8 @@ class CRL:
         # Network setup
         # Actor
         actor = Actor(
-            action_size=flat_action_chunk_size,
+            action_size=action_size,
+            action_chunk_length=self.action_chunk_length,
             network_width=self.h_dim,
             network_depth=self.n_hidden,
             skip_connections=self.skip_connections,
@@ -270,7 +311,7 @@ class CRL:
             use_relu=self.use_relu,
             use_ln=self.use_ln,
         )
-        sa_encoder_params = sa_encoder.init(sa_key, np.ones([1, state_size + flat_action_chunk_size]))
+        sa_encoder_params = sa_encoder.init(sa_key, np.ones([1, state_size + action_chunk_size]))
         g_encoder = Encoder(
             repr_dim=self.repr_dim,
             network_width=self.h_dim,
@@ -287,7 +328,7 @@ class CRL:
         )
 
         # Entropy coefficient
-        target_entropy = -0.5 * action_size
+        target_entropy = -0.5 * action_size  # Maybe action_chunk_size instead of action_size?
         log_alpha = jnp.asarray(0.0, dtype=jnp.float32)
         alpha_state = TrainState.create(
             apply_fn=None,
@@ -306,7 +347,7 @@ class CRL:
 
         # Replay Buffer
         dummy_obs = jnp.zeros((obs_size,))
-        dummy_action = jnp.zeros((flat_action_chunk_size,))
+        dummy_action = jnp.zeros((action_size,))
 
         dummy_transition = Transition(
             observation=dummy_obs,
@@ -332,91 +373,31 @@ class CRL:
                 dummy_data_sample=dummy_transition,
                 sample_batch_size=self.batch_size,
                 num_envs=config.num_envs,
-                episode_length=np.ceil(config.episode_length / self.action_chunk_length).astype(int),
+                episode_length=config.episode_length,
             )
         )
         buffer_state = jax.jit(replay_buffer.init)(buffer_key)
 
-        def deterministic_actor_step(training_state, env, env_state, extra_fields):
-            means, _ = actor.apply(training_state.actor_state.params, env_state.obs)
-
-            action_chunk = jnp.tanh(means)
-
-            if action_chunk.ndim == 1:
-                actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
-            elif action_chunk.ndim == 2:
-                actions = jnp.reshape(action_chunk, (-1, self.action_chunk_length, action_size))
-                actions = jnp.transpose(actions, (1, 0, 2))
-            else:
-                raise ValueError("unexpected action_chunk ndim")
-
-            def step_fn(carry, action):
-                nstate = carry
-
-                new_state = env.step(nstate, action)
-
-                return new_state, new_state
-
-            final_state, states = jax.lax.scan(
-                step_fn,
-                env_state,
-                actions
-            )
-
-            state_extras = {
-                x: final_state.info[x] for x in extra_fields
-            }
-
-            rewards = jnp.sum(states.reward, axis=0)
-            dones = jnp.any(states.done, axis=0)
-
-            return final_state, Transition(
-                observation=env_state.obs,
-                action=action_chunk,
-                reward=rewards,
-                discount=1 - dones,
-                extras={"state_extras": state_extras},
-            )
-
-        def actor_step(actor_state, env, env_state, key, extra_fields):
-            means, log_stds = actor.apply(actor_state.params, env_state.obs)
-
+        def get_actions(actor_state, obs, key):
+            means, log_stds = actor.apply(actor_state.params, obs)
             stds = jnp.exp(log_stds)
-            action_chunk = nn.tanh(means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype))
+            actions = nn.tanh(means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype))
+            return actions
 
-            if action_chunk.ndim == 1:
-                actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
-            elif action_chunk.ndim == 2:
-                actions = jnp.reshape(action_chunk, (-1, self.action_chunk_length, action_size))
-                actions = jnp.transpose(actions, (1, 0, 2))
-            else:
-                raise ValueError("unexpected action_chunk ndim")
+        def get_deterministic_actions(actor_state, obs):
+            means, _ = actor.apply(actor_state.params, obs)
+            actions = nn.tanh(means)
+            return actions
 
-            def step_fn(carry, action):
-                nstate = carry
+        def action_step(action, env, env_state, extra_fields):
+            nstate = env.step(env_state, action)
+            state_extras = {x: nstate.info[x] for x in extra_fields}
 
-                new_state = env.step(nstate, action)
-
-                return new_state, new_state
-
-            final_state, states = jax.lax.scan(
-                step_fn,
-                env_state,
-                actions
-            )
-
-            state_extras = {
-                x: final_state.info[x] for x in extra_fields
-            }
-
-            rewards = jnp.sum(states.reward, axis=0)
-            dones = jnp.any(states.done, axis=0)
-
-            return final_state, Transition(
+            return nstate, Transition(
                 observation=env_state.obs,
-                action=action_chunk,
-                reward=rewards,
-                discount=1 - dones,
+                action=action,
+                reward=nstate.reward,
+                discount=1 - nstate.done,
                 extras={"state_extras": state_extras},
             )
 
@@ -424,18 +405,20 @@ class CRL:
         def get_experience(actor_state, env_state, buffer_state, key):
             @jax.jit
             def f(carry, unused_t):
-                env_state, current_key = carry
+                env_state, current_key, chunk_idx, actions = carry
                 current_key, next_key = jax.random.split(current_key)
-                env_state, transition = actor_step(
-                    actor_state,
-                    train_env,
-                    env_state,
-                    current_key,
-                    extra_fields=("truncation", "traj_id"),
+                actions = jax.lax.cond(
+                    chunk_idx == 0,
+                    lambda: get_actions(actor_state, env_state.obs, current_key),
+                    lambda: actions,
                 )
-                return (env_state, next_key), transition
+                action = actions[..., chunk_idx, :]
+                env_state, transition = action_step(action, train_env, env_state, extra_fields=("truncation", "traj_id"))
+                chunk_idx = (chunk_idx + 1) % self.action_chunk_length
+                return (env_state, next_key, chunk_idx, actions), transition
 
-            (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=chunked_unroll_length)
+            actions = get_actions(actor_state, env_state.obs, key)  # Not optimal, but should be fine for now.
+            (env_state, _, _, _), data = jax.lax.scan(f, (env_state, key, 0, actions), (), length=self.unroll_length)
 
             buffer_state = replay_buffer.insert(buffer_state, data)
             return env_state, buffer_state
@@ -473,7 +456,7 @@ class CRL:
                 **vars(self),
                 **vars(config),
                 state_size=state_size,
-                action_size=flat_action_chunk_size,
+                action_size=action_size,
                 goal_size=goal_size,
                 obs_size=obs_size,
                 goal_indices=train_env.goal_indices,
@@ -524,21 +507,22 @@ class CRL:
 
             # process transitions for training
             batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
-            transitions = jax.vmap(flatten_batch, in_axes=(None, 0, 0))(
+            critic_transitions = jax.vmap(flatten_batch, in_axes=(None, 0, 0))(
                 (self.discounting, state_size, tuple(train_env.goal_indices)),
                 transitions,
                 batch_keys,
+                self.action_chunk_length,
             )
-            transitions = jax.tree_util.tree_map(
-                lambda x: jnp.reshape(x, (-1,) + x.shape[2:], order="F"), transitions
+            critic_transitions = jax.tree_util.tree_map(
+                lambda x: jnp.reshape(x, (-1,) + x.shape[2:], order="F"), critic_transitions
             )
 
             # permute transitions
-            permutation = jax.random.permutation(experience_key2, len(transitions.observation))
-            transitions = jax.tree_util.tree_map(lambda x: x[permutation], transitions)
-            transitions = jax.tree_util.tree_map(
+            permutation = jax.random.permutation(experience_key2, len(critic_transitions.state))
+            critic_transitions = jax.tree_util.tree_map(lambda x: x[permutation], critic_transitions)
+            critic_transitions = jax.tree_util.tree_map(
                 lambda x: jnp.reshape(x, (-1, self.batch_size) + x.shape[1:]),
-                transitions,
+                critic_transitions,
             )
 
             # take actor-step worth of training-step
@@ -548,7 +532,7 @@ class CRL:
                     _,
                 ),
                 metrics,
-            ) = jax.lax.scan(update_networks, (training_state, training_key), transitions)
+            ) = jax.lax.scan(update_networks, (training_state, training_key), critic_transitions)
 
             return (
                 training_state,
@@ -594,11 +578,12 @@ class CRL:
         )
 
         """Setting up evaluator"""
-        evaluator = ActorEvaluator(
-            deterministic_actor_step,
+        evaluator = ChunkedActorEvaluator(
+            get_deterministic_actions,
+            action_step,
             eval_env,
             num_eval_envs=config.num_eval_envs,
-            episode_length=np.ceil(config.episode_length / self.action_chunk_length).astype(int),
+            episode_length=config.episode_length,
             key=eval_env_key,
         )
 
@@ -640,7 +625,7 @@ class CRL:
                 make_policy,
                 training_state.actor_state.params,
                 unwrapped_env,
-                do_render=False,  # For now
+                do_render=False,
             )
 
             params = (
