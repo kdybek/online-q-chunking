@@ -147,7 +147,7 @@ class CRL:
 
     max_replay_size: int = 10000
     min_replay_size: int = 1000
-    unroll_length: int = 62
+    unroll_length: int = 75
     h_dim: int = 256
     n_hidden: int = 2
     skip_connections: int = 4
@@ -161,6 +161,8 @@ class CRL:
 
     contrastive_loss_fn: Literal["fwd_infonce", "sym_infonce", "bwd_infonce", "binary_nce"] = "fwd_infonce"
     energy_fn: Literal["norm", "l2", "dot", "cosine"] = "norm"
+
+    action_chunk_length: int = 1
 
     def check_config(self, config):
         """
@@ -199,9 +201,11 @@ class CRL:
             action_repeat=config.action_repeat,
         )
 
-        env_steps_per_actor_step = config.num_envs * self.unroll_length
+        chunked_unroll_length = np.ceil(self.unroll_length / self.action_chunk_length)
+        true_unroll_length = chunked_unroll_length * self.action_chunk_length
+        env_steps_per_actor_step = config.num_envs * true_unroll_length
         num_prefill_env_steps = self.min_replay_size * config.num_envs
-        num_prefill_actor_steps = np.ceil(self.min_replay_size / self.unroll_length)
+        num_prefill_actor_steps = np.ceil(self.min_replay_size / chunked_unroll_length)
         num_training_steps_per_epoch = np.ceil(
             (config.total_env_steps - num_prefill_env_steps) / (config.num_evals * env_steps_per_actor_step)
         )
@@ -234,6 +238,7 @@ class CRL:
 
         # Dimensions definitions and sanity checks
         action_size = train_env.action_size
+        flat_action_chunk_size = self.action_chunk_length * action_size
         state_size = train_env.state_dim
         goal_size = len(train_env.goal_indices)
         obs_size = state_size + goal_size
@@ -244,7 +249,7 @@ class CRL:
         # Network setup
         # Actor
         actor = Actor(
-            action_size=action_size,
+            action_size=flat_action_chunk_size,
             network_width=self.h_dim,
             network_depth=self.n_hidden,
             skip_connections=self.skip_connections,
@@ -265,7 +270,7 @@ class CRL:
             use_relu=self.use_relu,
             use_ln=self.use_ln,
         )
-        sa_encoder_params = sa_encoder.init(sa_key, np.ones([1, state_size + action_size]))
+        sa_encoder_params = sa_encoder.init(sa_key, np.ones([1, state_size + flat_action_chunk_size]))
         g_encoder = Encoder(
             repr_dim=self.repr_dim,
             network_width=self.h_dim,
@@ -301,7 +306,7 @@ class CRL:
 
         # Replay Buffer
         dummy_obs = jnp.zeros((obs_size,))
-        dummy_action = jnp.zeros((action_size,))
+        dummy_action = jnp.zeros((flat_action_chunk_size,))
 
         dummy_transition = Transition(
             observation=dummy_obs,
@@ -327,39 +332,91 @@ class CRL:
                 dummy_data_sample=dummy_transition,
                 sample_batch_size=self.batch_size,
                 num_envs=config.num_envs,
-                episode_length=config.episode_length,
+                episode_length=np.ceil(config.episode_length / self.action_chunk_length).astype(int),
             )
         )
         buffer_state = jax.jit(replay_buffer.init)(buffer_key)
 
         def deterministic_actor_step(training_state, env, env_state, extra_fields):
             means, _ = actor.apply(training_state.actor_state.params, env_state.obs)
-            actions = nn.tanh(means)
 
-            nstate = env.step(env_state, actions)
-            state_extras = {x: nstate.info[x] for x in extra_fields}
+            action_chunk = jnp.tanh(means)
 
-            return nstate, Transition(
+            if action_chunk.ndim == 1:
+                actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
+            elif action_chunk.ndim == 2:
+                actions = jnp.reshape(action_chunk, (-1, self.action_chunk_length, action_size))
+                actions = jnp.transpose(actions, (1, 0, 2))
+            else:
+                raise ValueError("unexpected action_chunk ndim")
+
+            def step_fn(carry, action):
+                nstate = carry
+
+                new_state = env.step(nstate, action)
+
+                return new_state, new_state
+
+            final_state, states = jax.lax.scan(
+                step_fn,
+                env_state,
+                actions
+            )
+
+            state_extras = {
+                x: final_state.info[x] for x in extra_fields
+            }
+
+            rewards = jnp.sum(states.reward, axis=0)
+            dones = jnp.any(states.done, axis=0)
+
+            return final_state, Transition(
                 observation=env_state.obs,
-                action=actions,
-                reward=nstate.reward,
-                discount=1 - nstate.done,
+                action=action_chunk,
+                reward=rewards,
+                discount=1 - dones,
                 extras={"state_extras": state_extras},
             )
 
         def actor_step(actor_state, env, env_state, key, extra_fields):
             means, log_stds = actor.apply(actor_state.params, env_state.obs)
+
             stds = jnp.exp(log_stds)
-            actions = nn.tanh(means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype))
+            action_chunk = nn.tanh(means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype))
 
-            nstate = env.step(env_state, actions)
-            state_extras = {x: nstate.info[x] for x in extra_fields}
+            if action_chunk.ndim == 1:
+                actions = jnp.reshape(action_chunk, (self.action_chunk_length, action_size))
+            elif action_chunk.ndim == 2:
+                actions = jnp.reshape(action_chunk, (-1, self.action_chunk_length, action_size))
+                actions = jnp.transpose(actions, (1, 0, 2))
+            else:
+                raise ValueError("unexpected action_chunk ndim")
 
-            return nstate, Transition(
+            def step_fn(carry, action):
+                nstate = carry
+
+                new_state = env.step(nstate, action)
+
+                return new_state, new_state
+
+            final_state, states = jax.lax.scan(
+                step_fn,
+                env_state,
+                actions
+            )
+
+            state_extras = {
+                x: final_state.info[x] for x in extra_fields
+            }
+
+            rewards = jnp.sum(states.reward, axis=0)
+            dones = jnp.any(states.done, axis=0)
+
+            return final_state, Transition(
                 observation=env_state.obs,
-                action=actions,
-                reward=nstate.reward,
-                discount=1 - nstate.done,
+                action=action_chunk,
+                reward=rewards,
+                discount=1 - dones,
                 extras={"state_extras": state_extras},
             )
 
@@ -378,7 +435,7 @@ class CRL:
                 )
                 return (env_state, next_key), transition
 
-            (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=self.unroll_length)
+            (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=chunked_unroll_length)
 
             buffer_state = replay_buffer.insert(buffer_state, data)
             return env_state, buffer_state
@@ -416,7 +473,7 @@ class CRL:
                 **vars(self),
                 **vars(config),
                 state_size=state_size,
-                action_size=action_size,
+                action_size=flat_action_chunk_size,
                 goal_size=goal_size,
                 obs_size=obs_size,
                 goal_indices=train_env.goal_indices,
@@ -541,7 +598,7 @@ class CRL:
             deterministic_actor_step,
             eval_env,
             num_eval_envs=config.num_eval_envs,
-            episode_length=config.episode_length,
+            episode_length=np.ceil(config.episode_length / self.action_chunk_length).astype(int),
             key=eval_env_key,
         )
 
@@ -583,7 +640,7 @@ class CRL:
                 make_policy,
                 training_state.actor_state.params,
                 unwrapped_env,
-                do_render=do_render,
+                do_render=False,  # For now
             )
 
             params = (
