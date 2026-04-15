@@ -147,8 +147,12 @@ def crl_action_sensitivity_metrics(energy_fn_name, networks, critic_params, crl_
     Samples n_samples random actions uniformly in [-1, 1]^action_dim, and returns var/mean of Q-values.
     Used in CRL and ACCRL.
     """
-    state = jnp.repeat(crl_transitions.state[0:1], n_samples, axis=0)  # (n_samples, state_dim)
-    goal = jnp.repeat(crl_transitions.goal[0:1], n_samples, axis=0)  # (n_samples, goal_dim)
+    state = crl_transitions.state
+    state = state[(0,) * (state.ndim - 1) + (slice(None),)]  # (state_dim,)
+    goal = crl_transitions.goal
+    goal = goal[(0,) * (goal.ndim - 1) + (slice(None),)]  # (goal_dim,)
+    state = jnp.repeat(state[None, :], n_samples, axis=0)  # (n_samples, state_dim)
+    goal = jnp.repeat(goal[None, :], n_samples, axis=0)  # (n_samples, goal_dim)
 
     action_dim = crl_transitions.action.shape[-1]
     random_actions = jax.random.uniform(key, shape=(n_samples, action_dim), minval=-1.0, maxval=1.0)  # (n_samples, action_dim)
