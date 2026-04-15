@@ -186,6 +186,7 @@ class MetricsRecorder:
         self,
         total_env_steps: int,
         metrics_to_collect: List[str],
+        optional_metrics: List[str],
         exp_dir,
         exp_name,
         mode,
@@ -195,6 +196,7 @@ class MetricsRecorder:
         self.y_data_err = {}
         self.times = [datetime.now()]
         self.metrics_to_collect = metrics_to_collect
+        self.optional_metrics = optional_metrics
         self.exp_dir = exp_dir
         self.exp_name = exp_name
         self.mode = mode
@@ -271,7 +273,7 @@ class MetricsRecorder:
 
         self.record(
             num_steps,
-            {key: value for key, value in metrics.items()},
+            {key: value for key, value in metrics.items() if key in self.metrics_to_collect + self.optional_metrics},
         )
         self.log_wandb()
         self.print_progress()
