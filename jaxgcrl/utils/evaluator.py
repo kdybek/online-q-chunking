@@ -87,7 +87,7 @@ def generate_chunked_unroll(get_actions, action_step, training_state, env, env_s
         (state, chunk_idx, actions) = carry
         actions = jax.lax.cond(
             chunk_idx == 0,
-            lambda: get_actions(training_state, env.obs),
+            lambda: get_actions(training_state.actor_state, state.obs),
             lambda: actions,
         )
         action = actions[..., chunk_idx, :]

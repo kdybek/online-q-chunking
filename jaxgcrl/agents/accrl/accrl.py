@@ -405,17 +405,17 @@ class ACCRL:
         def get_experience(actor_state, env_state, buffer_state, key):
             @jax.jit
             def f(carry, unused_t):
-                env_state, current_key, chunk_idx, actions = carry
+                state, current_key, chunk_idx, actions = carry
                 current_key, next_key = jax.random.split(current_key)
                 actions = jax.lax.cond(
                     chunk_idx == 0,
-                    lambda: get_actions(actor_state, env_state.obs, current_key),
+                    lambda: get_actions(actor_state, state.obs, current_key),
                     lambda: actions,
                 )
                 action = actions[..., chunk_idx, :]
-                env_state, transition = action_step(action, train_env, env_state, extra_fields=("truncation", "traj_id"))
+                nstate, transition = action_step(action, train_env, state, extra_fields=("truncation", "traj_id"))
                 chunk_idx = (chunk_idx + 1) % self.action_chunk_length
-                return (env_state, next_key, chunk_idx, actions), transition
+                return (nstate, next_key, chunk_idx, actions), transition
 
             actions = get_actions(actor_state, env_state.obs, key)  # Not optimal, but should be fine for now.
             (env_state, _, _, _), data = jax.lax.scan(f, (env_state, key, 0, actions), (), length=self.unroll_length)
