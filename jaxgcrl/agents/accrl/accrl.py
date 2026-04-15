@@ -21,7 +21,7 @@ from jaxgcrl.envs.wrappers import TrajectoryIdWrapper
 from jaxgcrl.utils.evaluator import ChunkedActorEvaluator
 from jaxgcrl.utils.replay_buffer import TrajectoryUniformSamplingQueue
 
-from .losses import update_actor_and_alpha, update_critic
+from .losses import update_actor_and_alpha, update_critic, crl_action_sensitivity_metrics
 from .networks import Actor, Encoder
 
 Metrics = types.Metrics
@@ -50,8 +50,8 @@ class Transition(NamedTuple):
     extras: jnp.ndarray = ()
 
 
-class CriticTransition(NamedTuple):
-    """Container for a transition used for critic update"""
+class CRLTransition(NamedTuple):
+    """Container for a transition used in CRL updates"""
     state: jnp.ndarray
     goal: jnp.ndarray
     action: jnp.ndarray
@@ -148,7 +148,7 @@ def flatten_batch(buffer_config, transition, sample_key):
         "future_action": future_action,
     }
 
-    return CriticTransition(
+    return CRLTransition(
         state=state,
         goal=goal,
         action=flat_action_chunk,
@@ -166,6 +166,10 @@ def save_params(path: str, params: Any):
     """Saves parameters in flax format."""
     with epath.Path(path).open("wb") as fout:
         fout.write(pickle.dumps(params))
+
+
+def count_params(params):
+    return sum(x.size for x in jax.tree_util.tree_leaves(params))
 
 
 @dataclass
@@ -345,6 +349,10 @@ class ACCRL:
             alpha_state=alpha_state,
         )
 
+        logging.info("Number of actor parameters: %d", count_params(actor_state.params))
+        logging.info("Number of critic parameters: %d", count_params(critic_state.params))
+        logging.info("Number of alpha parameters: %d", count_params(alpha_state.params))
+
         # Replay Buffer
         dummy_obs = jnp.zeros((obs_size,))
         dummy_action = jnp.zeros((action_size,))
@@ -486,16 +494,39 @@ class ACCRL:
                 key,
             ), metrics
 
+
+        @jax.jit
+        def process_transitions(transitions, sampling_key, permutation_key):
+            batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
+            crl_transitions = jax.vmap(flatten_batch, in_axes=(None, 0, 0))(
+                (self.discounting, state_size, tuple(train_env.goal_indices), self.action_chunk_length),
+                transitions,
+                batch_keys,
+            )
+            crl_transitions = jax.tree_util.tree_map(
+                lambda x: jnp.reshape(x, (-1,) + x.shape[2:], order="F"), crl_transitions
+            )
+
+            # permute transitions
+            permutation = jax.random.permutation(permutation_key, len(crl_transitions.state))
+            crl_transitions = jax.tree_util.tree_map(lambda x: x[permutation], crl_transitions)
+            crl_transitions = jax.tree_util.tree_map(
+                lambda x: jnp.reshape(x, (-1, self.batch_size) + x.shape[1:]),
+                crl_transitions,
+            )
+
+            return crl_transitions
+
         @jax.jit
         def training_step(training_state, env_state, buffer_state, key):
-            experience_key1, experience_key2, sampling_key, training_key = jax.random.split(key, 4)
+            experience_key, permutation_key, sampling_key, training_key = jax.random.split(key, 4)
 
             # update buffer
             env_state, buffer_state = get_experience(
                 training_state.actor_state,
                 env_state,
                 buffer_state,
-                experience_key1,
+                experience_key,
             )
 
             training_state = training_state.replace(
@@ -506,23 +537,7 @@ class ACCRL:
             buffer_state, transitions = replay_buffer.sample(buffer_state)
 
             # process transitions for training
-            batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
-            critic_transitions = jax.vmap(flatten_batch, in_axes=(None, 0, 0))(
-                (self.discounting, state_size, tuple(train_env.goal_indices), self.action_chunk_length),
-                transitions,
-                batch_keys,
-            )
-            critic_transitions = jax.tree_util.tree_map(
-                lambda x: jnp.reshape(x, (-1,) + x.shape[2:], order="F"), critic_transitions
-            )
-
-            # permute transitions
-            permutation = jax.random.permutation(experience_key2, len(critic_transitions.state))
-            critic_transitions = jax.tree_util.tree_map(lambda x: x[permutation], critic_transitions)
-            critic_transitions = jax.tree_util.tree_map(
-                lambda x: jnp.reshape(x, (-1, self.batch_size) + x.shape[1:]),
-                critic_transitions,
-            )
+            crl_transitions = process_transitions(transitions, sampling_key, permutation_key)
 
             # take actor-step worth of training-step
             (
@@ -531,7 +546,7 @@ class ACCRL:
                     _,
                 ),
                 metrics,
-            ) = jax.lax.scan(update_networks, (training_state, training_key), critic_transitions)
+            ) = jax.lax.scan(update_networks, (training_state, training_key), crl_transitions)
 
             return (
                 training_state,
@@ -613,6 +628,23 @@ class ACCRL:
             current_step = int(training_state.env_steps.item())
 
             metrics = evaluator.run_evaluation(training_state, metrics)
+
+            buffer_state, transitions = replay_buffer.sample(buffer_state)
+            key, sampling_key, permutation_key, sensitivity_key = jax.random.split(key, 4)
+            crl_transitions = process_transitions(transitions, sampling_key, permutation_key)
+            networks = dict(
+                actor=actor,
+                sa_encoder=sa_encoder,
+                g_encoder=g_encoder,
+            )
+            sensitivity_metrics = crl_action_sensitivity_metrics(
+                networks,
+                training_state.critic_state.params,
+                crl_transitions,
+                sensitivity_key
+            )
+            metrics.update(sensitivity_metrics)
+
             logging.info("step: %d", current_step)
 
             do_render = ne % config.visualization_interval == 0

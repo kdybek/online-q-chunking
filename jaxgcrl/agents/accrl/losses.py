@@ -138,3 +138,38 @@ def update_critic(config, networks, transitions, training_state, key):
     }
 
     return training_state, metrics
+
+
+@jax.jit
+def crl_action_sensitivity_metrics(self, networks, params, crl_transitions, key, n_samples=1024):
+    """
+    Measure variance and mean of Q-values over random actions for a fixed (s, g).
+
+    Samples n_samples random actions uniformly in [-1, 1]^action_dim, and returns var/mean of Q-values.
+    Used in CRL and ACCRL.
+    """
+    state = jnp.repeat(crl_transitions.state[0:1], n_samples, axis=0)  # (n_samples, state_dim)
+    goal = jnp.repeat(crl_transitions.goal[0:1], n_samples, axis=0)  # (n_samples, goal_dim)
+
+    action_dim = crl_transitions.action.shape[-1]
+    random_actions = jax.random.uniform(key, shape=(n_samples, action_dim), minval=-1.0, maxval=1.0)  # (n_samples, action_dim)
+
+    state_action = jnp.concatenate([state, random_actions], axis=-1)  # (n_samples, state_dim + action_dim)
+
+    sa_encoder_params, g_encoder_params = (
+        params["sa_encoder"],
+        params["g_encoder"],
+    )
+
+    sa_repr = networks["sa_encoder"].apply(sa_encoder_params, state_action)  # (n_samples, sa_repr_dim)
+    g_repr = networks["g_encoder"].apply(g_encoder_params, goal)  # (n_samples, g_repr_dim)
+
+    q_values = energy_fn(self.config["energy_fn"], sa_repr, g_repr)  # (n_samples,)
+
+    mean_q = jnp.mean(q_values)
+    var_q = jnp.var(q_values)
+
+    return {
+        "critic/action_sensitivity_mean_q": mean_q,
+        "critic/action_sensitivity_var_q": var_q,
+    }
