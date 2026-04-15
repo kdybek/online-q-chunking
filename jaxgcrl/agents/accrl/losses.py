@@ -140,39 +140,56 @@ def update_critic(config, networks, transitions, training_state, key):
     return training_state, metrics
 
 
-def crl_action_sensitivity_metrics(energy_fn_name, networks, critic_params, crl_transitions, key, n_samples=1024):
+def crl_action_sensitivity_metrics(
+        energy_fn_name,
+        networks,
+        critic_params,
+        crl_transitions,
+        key,
+        n_state_samples=128,
+        n_action_samples=256
+):
     """
     Measure variance and mean of Q-values over random actions for a fixed (s, g).
 
     Samples n_samples random actions uniformly in [-1, 1]^action_dim, and returns var/mean of Q-values.
     Used in CRL and ACCRL.
     """
+    ind_key, action_key = jax.random.split(key)
+
     state = crl_transitions.state
-    state = state[(0,) * (state.ndim - 1) + (slice(None),)]  # (state_dim,)
     goal = crl_transitions.goal
-    goal = goal[(0,) * (goal.ndim - 1) + (slice(None),)]  # (goal_dim,)
-    state = jnp.repeat(state[None, :], n_samples, axis=0)  # (n_samples, state_dim)
-    goal = jnp.repeat(goal[None, :], n_samples, axis=0)  # (n_samples, goal_dim)
+    state = jnp.reshape(state, (-1, state.shape[-1]))
+    goal = jnp.reshape(goal, (-1, goal.shape[-1]))
+
+    batch_dim = state.shape[0]
+    inds = jax.random.choice(ind_key, batch_dim, shape=(n_state_samples,), replace=False)
+    state = state[inds]  # (n_state_samples, state_dim)
+    goal = goal[inds]  # (n_state_samples, goal_dim)
+
+    state = jnp.repeat(state[None, ...], n_action_samples, axis=0)
+    goal = jnp.repeat(goal[None, ...], n_action_samples, axis=0)
 
     action_dim = crl_transitions.action.shape[-1]
-    random_actions = jax.random.uniform(key, shape=(n_samples, action_dim), minval=-1.0, maxval=1.0)  # (n_samples, action_dim)
+    random_actions = jax.random.uniform(action_key, shape=(n_action_samples, action_dim), minval=-1.0, maxval=1.0)
+    random_actions = jnp.repeat(random_actions[:, None, :], n_state_samples, axis=1)
 
-    state_action = jnp.concatenate([state, random_actions], axis=-1)  # (n_samples, state_dim + action_dim)
+    state_action = jnp.concatenate([state, random_actions], axis=-1)
 
     sa_encoder_params, g_encoder_params = (
         critic_params["sa_encoder"],
         critic_params["g_encoder"],
     )
 
-    sa_repr = networks["sa_encoder"].apply(sa_encoder_params, state_action)  # (n_samples, sa_repr_dim)
-    g_repr = networks["g_encoder"].apply(g_encoder_params, goal)  # (n_samples, g_repr_dim)
+    sa_repr = networks["sa_encoder"].apply(sa_encoder_params, state_action)
+    g_repr = networks["g_encoder"].apply(g_encoder_params, goal)
 
-    q_values = energy_fn(energy_fn_name, sa_repr, g_repr)  # (n_samples,)
+    q_values = energy_fn(energy_fn_name, sa_repr, g_repr)  # (n_action_samples, n_state_samples)
 
+    var_q = jnp.mean(jnp.var(q_values, axis=0))
     mean_q = jnp.mean(q_values)
-    var_q = jnp.var(q_values)
 
     return {
-        "critic/action_sensitivity_mean_q": mean_q,
         "critic/action_sensitivity_var_q": var_q,
+        "critic/action_sensitivity_mean_q": mean_q,
     }
