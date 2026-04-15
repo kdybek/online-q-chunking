@@ -95,7 +95,7 @@ def generate_chunked_unroll(get_actions, action_step, training_state, env, env_s
         chunk_idx = (chunk_idx + 1) % actions.shape[-2]
         return (nstate, chunk_idx, actions), transition
 
-    actions = get_actions(training_state, env_state.obs)  # Not optimal, but should be fine for now.
+    actions = get_actions(training_state.actor_state, env_state.obs)  # Not optimal, but should be fine for now.
     (final_state, _, _), data = jax.lax.scan(f, (env_state, 0, actions), (), length=unroll_length)
     return final_state, data
 
