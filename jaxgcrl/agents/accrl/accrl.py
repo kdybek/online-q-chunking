@@ -332,7 +332,7 @@ class ACCRL:
         )
 
         # Entropy coefficient
-        target_entropy = -0.5 * action_size  # Maybe action_chunk_size instead of action_size?
+        target_entropy = -0.5 * action_chunk_size
         log_alpha = jnp.asarray(0.0, dtype=jnp.float32)
         alpha_state = TrainState.create(
             apply_fn=None,
