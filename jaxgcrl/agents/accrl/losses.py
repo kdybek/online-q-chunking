@@ -44,6 +44,7 @@ def update_actor_and_alpha(config, networks, transitions, training_state, key):
         stds = jnp.exp(log_stds)
         x_ts = means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype)
         action = nn.tanh(x_ts)
+        action = jnp.reshape(action, (action.shape[0], -1))
         log_prob = jax.scipy.stats.norm.logpdf(x_ts, loc=means, scale=stds)
         log_prob -= jnp.log((1 - jnp.square(action)) + 1e-6)
         log_prob = log_prob.sum(-1)  # dimension = B
