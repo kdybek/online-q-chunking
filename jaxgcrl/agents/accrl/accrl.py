@@ -496,7 +496,8 @@ class ACCRL:
 
 
         @jax.jit
-        def process_transitions(transitions, sampling_key, permutation_key):
+        def process_transitions(transitions, key):
+            sampling_key, permutation_key = jax.random.split(key)
             batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
             crl_transitions = jax.vmap(flatten_batch, in_axes=(None, 0, 0))(
                 (self.discounting, state_size, tuple(train_env.goal_indices), self.action_chunk_length),
@@ -519,7 +520,7 @@ class ACCRL:
 
         @jax.jit
         def training_step(training_state, env_state, buffer_state, key):
-            experience_key, permutation_key, sampling_key, training_key = jax.random.split(key, 4)
+            experience_key, process_key, training_key = jax.random.split(key, 3)
 
             # update buffer
             env_state, buffer_state = get_experience(
@@ -537,7 +538,7 @@ class ACCRL:
             buffer_state, transitions = replay_buffer.sample(buffer_state)
 
             # process transitions for training
-            crl_transitions = process_transitions(transitions, sampling_key, permutation_key)
+            crl_transitions = process_transitions(transitions, process_key)
 
             # take actor-step worth of training-step
             (
@@ -585,6 +586,23 @@ class ACCRL:
             metrics["buffer_current_size"] = replay_buffer.size(buffer_state)
             return training_state, env_state, buffer_state, metrics
 
+        @jax.jit
+        def compute_action_sensitivity_metrics(buffer_state, critic_params, key):
+            process_key, sensitivity_key = jax.random.split(key)
+            _, transitions = replay_buffer.sample(buffer_state)
+            crl_transitions = process_transitions(transitions, process_key)
+            networks = dict(
+                sa_encoder=sa_encoder,
+                g_encoder=g_encoder,
+            )
+            sensitivity_metrics = crl_action_sensitivity_metrics(
+                networks,
+                critic_params,
+                crl_transitions,
+                sensitivity_key,
+            )
+            return sensitivity_metrics
+
         key, prefill_key = jax.random.split(key, 2)
 
         training_state, env_state, buffer_state, _ = prefill_replay_buffer(
@@ -629,19 +647,11 @@ class ACCRL:
 
             metrics = evaluator.run_evaluation(training_state, metrics)
 
-            buffer_state, transitions = replay_buffer.sample(buffer_state)
-            key, sampling_key, permutation_key, sensitivity_key = jax.random.split(key, 4)
-            crl_transitions = process_transitions(transitions, sampling_key, permutation_key)
-            networks = dict(
-                actor=actor,
-                sa_encoder=sa_encoder,
-                g_encoder=g_encoder,
-            )
-            sensitivity_metrics = crl_action_sensitivity_metrics(
-                networks,
+            key, sensitivity_key = jax.random.split(key)
+            sensitivity_metrics = compute_action_sensitivity_metrics(
+                buffer_state,
                 training_state.critic_state.params,
-                crl_transitions,
-                sensitivity_key
+                sensitivity_key,
             )
             metrics.update(sensitivity_metrics)
 

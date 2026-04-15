@@ -140,8 +140,7 @@ def update_critic(config, networks, transitions, training_state, key):
     return training_state, metrics
 
 
-@jax.jit
-def crl_action_sensitivity_metrics(self, networks, params, crl_transitions, key, n_samples=1024):
+def crl_action_sensitivity_metrics(self, networks, critic_params, crl_transitions, key, n_samples=1024):
     """
     Measure variance and mean of Q-values over random actions for a fixed (s, g).
 
@@ -157,8 +156,8 @@ def crl_action_sensitivity_metrics(self, networks, params, crl_transitions, key,
     state_action = jnp.concatenate([state, random_actions], axis=-1)  # (n_samples, state_dim + action_dim)
 
     sa_encoder_params, g_encoder_params = (
-        params["sa_encoder"],
-        params["g_encoder"],
+        critic_params["sa_encoder"],
+        critic_params["g_encoder"],
     )
 
     sa_repr = networks["sa_encoder"].apply(sa_encoder_params, state_action)  # (n_samples, sa_repr_dim)
