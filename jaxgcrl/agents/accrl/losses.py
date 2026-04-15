@@ -41,10 +41,11 @@ def update_actor_and_alpha(config, networks, transitions, training_state, key):
         observation = jnp.concatenate([state, goal], axis=1)
 
         means, log_stds = networks["actor"].apply(actor_params, observation)
+        means = jnp.reshape(means, (means.shape[0], -1))
+        log_stds = jnp.reshape(log_stds, (log_stds.shape[0], -1))
         stds = jnp.exp(log_stds)
         x_ts = means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype)
         action = nn.tanh(x_ts)
-        action = jnp.reshape(action, (action.shape[0], -1))
         log_prob = jax.scipy.stats.norm.logpdf(x_ts, loc=means, scale=stds)
         log_prob -= jnp.log((1 - jnp.square(action)) + 1e-6)
         log_prob = log_prob.sum(-1)  # dimension = B
