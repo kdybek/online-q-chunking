@@ -140,7 +140,7 @@ def update_critic(config, networks, transitions, training_state, key):
     return training_state, metrics
 
 
-def crl_action_sensitivity_metrics(self, networks, critic_params, crl_transitions, key, n_samples=1024):
+def crl_action_sensitivity_metrics(energy_fn_name, networks, critic_params, crl_transitions, key, n_samples=1024):
     """
     Measure variance and mean of Q-values over random actions for a fixed (s, g).
 
@@ -163,7 +163,7 @@ def crl_action_sensitivity_metrics(self, networks, critic_params, crl_transition
     sa_repr = networks["sa_encoder"].apply(sa_encoder_params, state_action)  # (n_samples, sa_repr_dim)
     g_repr = networks["g_encoder"].apply(g_encoder_params, goal)  # (n_samples, g_repr_dim)
 
-    q_values = energy_fn(self.config["energy_fn"], sa_repr, g_repr)  # (n_samples,)
+    q_values = energy_fn(energy_fn_name, sa_repr, g_repr)  # (n_samples,)
 
     mean_q = jnp.mean(q_values)
     var_q = jnp.var(q_values)

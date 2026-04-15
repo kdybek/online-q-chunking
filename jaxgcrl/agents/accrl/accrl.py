@@ -596,6 +596,7 @@ class ACCRL:
                 g_encoder=g_encoder,
             )
             sensitivity_metrics = crl_action_sensitivity_metrics(
+                config.energy_fn,
                 networks,
                 critic_params,
                 crl_transitions,
