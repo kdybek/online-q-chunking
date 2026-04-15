@@ -99,7 +99,7 @@ def update_critic(config, networks, transitions, training_state, key):
 
         state = transitions.state
         goal = transitions.goal
-        action = transitions.flat_action_chunk
+        action = transitions.action
 
         sa_repr = networks["sa_encoder"].apply(sa_encoder_params, jnp.concatenate([state, action], axis=-1))
         g_repr = networks["g_encoder"].apply(

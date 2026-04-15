@@ -54,13 +54,13 @@ class CriticTransition(NamedTuple):
     """Container for a transition used for critic update"""
     state: jnp.ndarray
     goal: jnp.ndarray
-    flat_action_chunk: jnp.ndarray
+    action: jnp.ndarray
     extras: jnp.ndarray = ()
 
 
-@functools.partial(jax.jit, static_argnames=("buffer_config", "action_chunk_length"))
-def flatten_batch(buffer_config, transition, sample_key, action_chunk_length):
-    gamma, state_size, goal_indices = buffer_config
+@functools.partial(jax.jit, static_argnames=("buffer_config",))
+def flatten_batch(buffer_config, transition, sample_key):
+    gamma, state_size, goal_indices, action_chunk_length = buffer_config
 
     # Because it's vmaped transition.obs.shape is of shape (episode_len, obs_dim)
     seq_len = transition.observation.shape[0]
@@ -151,7 +151,7 @@ def flatten_batch(buffer_config, transition, sample_key, action_chunk_length):
     return CriticTransition(
         state=state,
         goal=goal,
-        flat_action_chunk=flat_action_chunk,
+        action=flat_action_chunk,
         extras=extras,
     )
 
@@ -508,10 +508,9 @@ class ACCRL:
             # process transitions for training
             batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
             critic_transitions = jax.vmap(flatten_batch, in_axes=(None, 0, 0))(
-                (self.discounting, state_size, tuple(train_env.goal_indices)),
+                (self.discounting, state_size, tuple(train_env.goal_indices), self.action_chunk_length),
                 transitions,
                 batch_keys,
-                self.action_chunk_length,
             )
             critic_transitions = jax.tree_util.tree_map(
                 lambda x: jnp.reshape(x, (-1,) + x.shape[2:], order="F"), critic_transitions
