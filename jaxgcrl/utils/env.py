@@ -186,7 +186,6 @@ class MetricsRecorder:
         self,
         total_env_steps: int,
         metrics_to_collect: List[str],
-        optional_metrics: List[str],
         exp_dir,
         exp_name,
         mode,
