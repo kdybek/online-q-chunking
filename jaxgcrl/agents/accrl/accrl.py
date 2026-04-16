@@ -210,6 +210,8 @@ class ACCRL:
     contrastive_loss_fn: Literal["fwd_infonce", "sym_infonce", "bwd_infonce", "binary_nce"] = "fwd_infonce"
     energy_fn: Literal["norm", "l2", "dot", "cosine"] = "norm"
 
+    action_noise_std: float = 0.0
+
     def check_config(self, config):
         """
         episode_length: the maximum length of an episode
@@ -414,13 +416,22 @@ class ACCRL:
             @jax.jit
             def f(carry, unused_t):
                 state, current_key, chunk_idx, actions = carry
-                current_key, next_key = jax.random.split(current_key)
+                action_key, noise_key, next_key = jax.random.split(current_key, 3)
+
                 actions = jax.lax.cond(
                     chunk_idx == 0,
-                    lambda: get_actions(actor_state, state.obs, current_key),
+                    lambda: get_actions(actor_state, state.obs, action_key),
                     lambda: actions,
                 )
                 action = actions[..., chunk_idx, :]
+
+                noise = jax.lax.cond(
+                    self.action_noise_std > 0.0,
+                    lambda: self.action_noise_std * jax.random.normal(noise_key, shape=action.shape),
+                    lambda: jnp.zeros_like(action),
+                )
+                action = jnp.clip(action + noise, -1.0, 1.0)
+
                 nstate, transition = action_step(action, train_env, state, extra_fields=("truncation", "traj_id"))
                 chunk_idx = (chunk_idx + 1) % self.action_chunk_length
                 return (nstate, next_key, chunk_idx, actions), transition
