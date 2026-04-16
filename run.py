@@ -78,6 +78,7 @@ def main(config: Config):
         "eval/episode_reward_near",
         "eval/episode_reward_survive",
         "eval/episode_success",
+        "eval/episode_success_easy",
         "eval/episode_success_any",
         "eval/episode_success_hard",
         "training/actor_loss",
@@ -86,19 +87,13 @@ def main(config: Config):
         "training/critic_loss",
         "training/entropy",
         "training/sps",
-    ]
-
-    # Collect if they are available, but don't require them to be present in the logs
-    optional_metrics = [
         "critic/action_sensitivity_var_q",
         "critic/action_sensitivity_mean_q",
-        "eval/episode_success_easy",
     ]
 
     metrics_recorder = MetricsRecorder(
         config.run.total_env_steps,
         metrics_to_collect,
-        optional_metrics,
         run_dir,
         config.run.exp_name,
         mode=config.run.wandb_mode,
