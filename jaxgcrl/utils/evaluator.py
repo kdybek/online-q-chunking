@@ -212,6 +212,18 @@ class ChunkedActorEvaluator:
             # (np.min, "_min"),
         ]
 
+        wanted_metric_names = [
+            "reward",
+            "success",
+            "success_easy",
+            "dist",
+            "distance_from_origin",
+        ]
+
+        available_metric_names = eval_metrics.episode_metrics.keys()
+
+        metric_names = [name for name in wanted_metric_names if name in available_metric_names]
+
         for fn, suffix in aggregating_fns:
             metrics.update(
                 {
@@ -220,13 +232,7 @@ class ChunkedActorEvaluator:
                         if aggregate_episodes
                         else eval_metrics.episode_metrics[name]
                     )
-                    for name in [
-                        "reward",
-                        "success",
-                        "success_easy",
-                        "dist",
-                        "distance_from_origin",
-                    ]
+                    for name in metric_names
                 }
             )
 

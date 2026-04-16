@@ -79,7 +79,6 @@ def main(config: Config):
         "eval/episode_reward_survive",
         "eval/episode_success",
         "eval/episode_success_any",
-        "eval/episode_success_easy",
         "eval/episode_success_hard",
         "training/actor_loss",
         "training/log_alpha",
@@ -93,6 +92,7 @@ def main(config: Config):
     optional_metrics = [
         "critic/action_sensitivity_var_q",
         "critic/action_sensitivity_mean_q",
+        "eval/episode_success_easy",
     ]
 
     metrics_recorder = MetricsRecorder(
