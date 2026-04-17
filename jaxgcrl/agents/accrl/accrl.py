@@ -223,7 +223,7 @@ class ACCRL:
             "num_envs * (episode_length - 1) must be divisible by batch_size"
         )
 
-        assert config.replan_every <= self.action_chunk_length, (
+        assert self.replan_every <= self.action_chunk_length, (
             "replan_every cannot be greater than action_chunk_length"
         )
 
