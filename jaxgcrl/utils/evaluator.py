@@ -79,7 +79,7 @@ def generate_unroll(actor_step, training_state, env, env_state, unroll_length, e
     return final_state, data
 
 
-def generate_chunked_unroll(get_actions, action_step, training_state, env, env_state, unroll_length, extra_fields=()):
+def generate_chunked_unroll(get_actions, action_step, replan_every, training_state, env, env_state, unroll_length, extra_fields=()):
     """Collect trajectories of given unroll_length."""
 
     @jax.jit
@@ -92,7 +92,7 @@ def generate_chunked_unroll(get_actions, action_step, training_state, env, env_s
         )
         action = actions[..., chunk_idx, :]
         nstate, transition = action_step(action, env, state, extra_fields=extra_fields)
-        chunk_idx = (chunk_idx + 1) % actions.shape[-2]
+        chunk_idx = (chunk_idx + 1) % replan_every
         return (nstate, chunk_idx, actions), transition
 
     actions = get_actions(training_state.actor_state, env_state.obs)  # Not optimal, but should be fine for now.
@@ -180,7 +180,7 @@ class ActorEvaluator:
 class ChunkedActorEvaluator:
     """Single GPU evaluator that evaluates an arbitrary chunked actor function. Used by the ACCRL agent."""
 
-    def __init__(self, get_actions, action_step, eval_env, num_eval_envs, episode_length, key):
+    def __init__(self, get_actions, action_step, replan_every, eval_env, num_eval_envs, episode_length, key):
         self._key = key
         self._eval_walltime = 0.0
 
@@ -192,6 +192,7 @@ class ChunkedActorEvaluator:
             return generate_chunked_unroll(
                 get_actions,
                 action_step,
+                replan_every,
                 training_state,
                 eval_env,
                 eval_first_state,

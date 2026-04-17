@@ -182,6 +182,7 @@ class ACCRL:
     batch_size: int = 256
 
     action_chunk_length: int = 3
+    replan_every: int = 3
 
     # gamma
     discounting: float = 0.99
@@ -220,6 +221,10 @@ class ACCRL:
         """
         assert config.num_envs * (config.episode_length - 1) % self.batch_size == 0, (
             "num_envs * (episode_length - 1) must be divisible by batch_size"
+        )
+
+        assert config.replan_every <= self.action_chunk_length, (
+            "replan_every cannot be greater than action_chunk_length"
         )
 
     def train_fn(
@@ -433,7 +438,7 @@ class ACCRL:
                 action = jnp.clip(action + noise, -1.0, 1.0)
 
                 nstate, transition = action_step(action, train_env, state, extra_fields=("truncation", "traj_id"))
-                chunk_idx = (chunk_idx + 1) % self.action_chunk_length
+                chunk_idx = (chunk_idx + 1) % self.replan_every
                 return (nstate, next_key, chunk_idx, actions), transition
 
             actions = get_actions(actor_state, env_state.obs, key)  # Not optimal, but should be fine for now.
@@ -625,6 +630,7 @@ class ACCRL:
         evaluator = ChunkedActorEvaluator(
             get_deterministic_actions,
             action_step,
+            self.replan_every,
             eval_env,
             num_eval_envs=config.num_eval_envs,
             episode_length=config.episode_length,
