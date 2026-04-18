@@ -48,7 +48,6 @@ for seed in 0 1 2; do
         jaxgcrl accrl \
             --env $ENV \
             --action_chunk_length $action_chunk_length \
-            --replan_every $action_chunk_length \
             --seed $seed \
             --random_replanning \
             --wandb_group "random_replanning" \
