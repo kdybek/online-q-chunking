@@ -183,6 +183,7 @@ class ChunkedActorEvaluator:
     def __init__(self, get_actions, action_step, receding_horizon, eval_env, num_eval_envs, episode_length, key):
         self._key = key
         self._eval_walltime = 0.0
+        self._receding_horizon = receding_horizon
 
         eval_env = envs.training.EvalWrapper(eval_env)
 
@@ -231,7 +232,7 @@ class ChunkedActorEvaluator:
 
         metric_names = [name for name in wanted_metric_names if name in available_metric_names]
 
-        prefix = f"eval/rh{self.receding_horizon}"
+        prefix = f"eval/rh{self._receding_horizon}"
 
         for fn, suffix in aggregating_fns:
             metrics.update(

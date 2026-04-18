@@ -52,7 +52,7 @@ class Pusher2(PipelineEnv):
         self._goal_idxs = jnp.array([self.sys.link_names.index("goal1"), self.sys.link_names.index("goal2")])
 
         self.state_dim = 23
-        self.goal_indices = jnp.array([10, 11, 12, 13, 14, 15])
+        self.goal_indices = (10, 11, 12, 13, 14, 15)
 
     def reset(self, rng: jax.Array) -> State:
         qpos = self.sys.init_q

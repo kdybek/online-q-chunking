@@ -205,7 +205,7 @@ class SimpleMaze(PipelineEnv):
         self._exclude_current_positions_from_observation = exclude_current_positions_from_observation
 
         self.state_dim = 4
-        self.goal_indices = jnp.array([0, 1])
+        self.goal_indices = (0, 1)
         self.goal_reach_thresh = 0.5
 
         if self._use_contact_forces:

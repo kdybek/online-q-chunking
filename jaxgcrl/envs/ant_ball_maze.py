@@ -165,7 +165,7 @@ class AntBallMaze(PipelineEnv):
         self.dense_reward = dense_reward
 
         self.state_dim = 31
-        self.goal_indices = jnp.array([28, 29])
+        self.goal_indices = (28, 29)
         self.goal_reach_thresh = 0.5
 
         if self._use_contact_forces:

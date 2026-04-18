@@ -68,7 +68,7 @@ class AntBall(PipelineEnv):
         self.dense_reward = dense_reward
 
         self.state_dim = 31
-        self.goal_indices = jnp.array([29, 30])
+        self.goal_indices = (29, 30)
         self.goal_reach_thresh = 0.5
 
         if self._use_contact_forces:

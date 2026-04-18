@@ -43,7 +43,7 @@ class Halfcheetah(PipelineEnv):
         self._exclude_current_positions_from_observation = exclude_current_positions_from_observation
         self.dense_reward = dense_reward
         self.state_dim = 18
-        self.goal_indices = jnp.array([0])
+        self.goal_indices = (0,)
         self.goal_reach_thresh = 0.5
 
     def reset(self, rng: jax.Array) -> State:

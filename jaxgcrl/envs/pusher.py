@@ -33,7 +33,7 @@ class Pusher(PipelineEnv):
         self.kind = kind
         self.dense_reward = dense_reward
         self.state_dim = 20
-        self.goal_indices = jnp.array([10, 11, 12])
+        self.goal_indices = (10, 11, 12)
         self.goal_reach_thresh = 0.1
 
     def reset(self, rng: jax.Array) -> State:

@@ -60,7 +60,7 @@ class AntPush(PipelineEnv):
         self._object_idx = self.sys.link_names.index("movable")
         self.dense_reward = dense_reward
         self.state_dim = 31
-        self.goal_indices = jnp.array([0, 1])
+        self.goal_indices = (0, 1)
         self.goal_reach_thresh = 0.5
 
         if self._use_contact_forces:

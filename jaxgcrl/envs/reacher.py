@@ -28,7 +28,7 @@ class Reacher(PipelineEnv):
         super().__init__(sys=sys, backend=backend, **kwargs)
         self.dense_reward = dense_reward
         self.state_dim = 10
-        self.goal_indices = jnp.array([4, 5, 6])
+        self.goal_indices = (4, 5, 6)
         self.goal_reach_thresh = 0.05
 
     def reset(self, rng: jax.Array) -> State:

@@ -11,8 +11,6 @@
 #SBATCH --error=logs/%x_%j.err
 
 ml Python/3.11.5
-ml CUDA/12.8.0
-ml cuDNN/8.9.7.29-CUDA-12.8.0
 
 export XDG_CACHE_HOME=$SCRATCH/.cache
 export WANDB_API_KEY=$(cat ~/.wandb_key)
@@ -21,11 +19,7 @@ export MUJOCO_GL=egl
 cd $SCRATCH/online-q-chunking
 cp -rf ~/online-q-chunking/* .
 
-VENV=".venv_$SLURM_JOB_ID"
-python -m venv $VENV
-source $VENV/bin/activate
-
-pip install -e . -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+source .venv/bin/activate
 
 FLAGS="--num_evals 200 \
   --total_env_steps 60000000 \

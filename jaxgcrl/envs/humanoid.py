@@ -89,7 +89,7 @@ class Humanoid(PipelineEnv):
         self._max_goal_dist = max_goal_dist
 
         self.state_dim = 268
-        self.goal_indices = jnp.array([0, 1, 2])
+        self.goal_indices = (0, 1, 2)
         self.goal_reach_thresh = 0.5
 
     def reset(self, rng: jax.Array) -> State:
