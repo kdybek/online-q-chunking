@@ -271,8 +271,9 @@ class MetricsRecorder:
 
         self.record(
             num_steps,
-            {key: value for key, value in metrics.items() if key in self.metrics_to_collect},
+            {key: value for key, value in metrics.items()},
         )
+
         self.log_wandb()
         self.print_progress()
 

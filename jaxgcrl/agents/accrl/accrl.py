@@ -182,7 +182,6 @@ class ACCRL:
     batch_size: int = 256
 
     action_chunk_length: int = 3
-    replan_every: int = 3
 
     # gamma
     discounting: float = 0.99
@@ -213,6 +212,8 @@ class ACCRL:
 
     action_noise_std: float = 0.0
 
+    random_replanning: bool = False
+
     def check_config(self, config):
         """
         episode_length: the maximum length of an episode
@@ -221,10 +222,6 @@ class ACCRL:
         """
         assert config.num_envs * (config.episode_length - 1) % self.batch_size == 0, (
             "num_envs * (episode_length - 1) must be divisible by batch_size"
-        )
-
-        assert self.replan_every <= self.action_chunk_length, (
-            "replan_every cannot be greater than action_chunk_length"
         )
 
     def train_fn(
@@ -420,8 +417,8 @@ class ACCRL:
         def get_experience(actor_state, env_state, buffer_state, key):
             @jax.jit
             def f(carry, unused_t):
-                state, current_key, chunk_idx, actions = carry
-                action_key, noise_key, next_key = jax.random.split(current_key, 3)
+                state, current_key, chunk_idx, actions, replan_len = carry
+                action_key, replan_key, noise_key, next_key = jax.random.split(current_key, 4)
 
                 actions = jax.lax.cond(
                     chunk_idx == 0,
@@ -429,6 +426,12 @@ class ACCRL:
                     lambda: actions,
                 )
                 action = actions[..., chunk_idx, :]
+
+                replan_len = jax.lax.cond(
+                    self.random_replanning and chunk_idx == 0,
+                    lambda: jax.random.randint(replan_key, (), 1, self.action_chunk_length + 1),
+                    lambda: replan_len,
+                )
 
                 noise = jax.lax.cond(
                     self.action_noise_std > 0.0,
@@ -438,11 +441,16 @@ class ACCRL:
                 action = jnp.clip(action + noise, -1.0, 1.0)
 
                 nstate, transition = action_step(action, train_env, state, extra_fields=("truncation", "traj_id"))
-                chunk_idx = (chunk_idx + 1) % self.replan_every
-                return (nstate, next_key, chunk_idx, actions), transition
+                chunk_idx = (chunk_idx + 1) % replan_len
 
-            actions = get_actions(actor_state, env_state.obs, key)  # Not optimal, but should be fine for now.
-            (env_state, _, _, _), data = jax.lax.scan(f, (env_state, key, 0, actions), (), length=self.unroll_length)
+                return (nstate, next_key, chunk_idx, actions, replan_len), transition
+
+            (env_state, _, _, _, _), data = jax.lax.scan(
+                f,
+                (env_state, key, 0, None, self.action_chunk_length),
+                (),
+                length=self.unroll_length
+            )
 
             buffer_state = replay_buffer.insert(buffer_state, data)
             return env_state, buffer_state
@@ -626,16 +634,18 @@ class ACCRL:
             training_state, env_state, buffer_state, prefill_key
         )
 
-        """Setting up evaluator"""
-        evaluator = ChunkedActorEvaluator(
-            get_deterministic_actions,
-            action_step,
-            self.replan_every,
-            eval_env,
-            num_eval_envs=config.num_eval_envs,
-            episode_length=config.episode_length,
-            key=eval_env_key,
-        )
+        """Setting up evaluators"""
+        evaluators = [
+            ChunkedActorEvaluator(
+                get_deterministic_actions,
+                action_step,
+                receding_horizon,
+                eval_env,
+                num_eval_envs=config.num_eval_envs,
+                episode_length=config.episode_length,
+                key=eval_env_key,
+            ) for receding_horizon in range(1, self.action_chunk_length + 1)
+        ]
 
         training_walltime = 0
         logging.info("starting training....")
@@ -663,7 +673,9 @@ class ACCRL:
             }
             current_step = int(training_state.env_steps.item())
 
-            metrics = evaluator.run_evaluation(training_state, metrics)
+            for evaluator in evaluators:
+                eval_metrics = evaluator.run_evaluation(training_state)
+                metrics.update(eval_metrics)
 
             key, sensitivity_key = jax.random.split(key)
             sensitivity_metrics = compute_action_sensitivity_metrics(

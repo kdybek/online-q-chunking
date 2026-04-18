@@ -71,16 +71,6 @@ def main(config: Config):
         pickle.dump(vars(config), f)
 
     metrics_to_collect = [
-        "eval/episode_dist",
-        "eval/episode_reward",
-        "eval/episode_reward_ctrl",
-        "eval/episode_reward_dist",
-        "eval/episode_reward_near",
-        "eval/episode_reward_survive",
-        "eval/episode_success",
-        "eval/episode_success_easy",
-        "eval/episode_success_any",
-        "eval/episode_success_hard",
         "training/actor_loss",
         "training/log_alpha",
         "training/alpha_loss",
