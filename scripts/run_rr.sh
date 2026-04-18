@@ -10,6 +10,8 @@
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
 
+unset LD_LIBRARY_PATH
+
 ml Python/3.11.5
 
 export XDG_CACHE_HOME=$SCRATCH/.cache
