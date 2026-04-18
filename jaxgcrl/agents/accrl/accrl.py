@@ -445,9 +445,10 @@ class ACCRL:
 
                 return (nstate, next_key, chunk_idx, actions, replan_len), transition
 
+            actions = get_actions(actor_state, env_state.obs, key)  # Not optimal, but should be fine for now.
             (env_state, _, _, _, _), data = jax.lax.scan(
                 f,
-                (env_state, key, 0, None, self.action_chunk_length),
+                (env_state, key, 0, actions, self.action_chunk_length),
                 (),
                 length=self.unroll_length
             )
