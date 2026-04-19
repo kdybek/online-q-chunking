@@ -41,7 +41,7 @@ FLAGS="--num_evals 200 \
 ENV=$1
 
 for seed in 0 1 2; do
-    for action_chunk_length in 1 3 5; do
+    for action_chunk_length in 1 3 5 10 15; do
         jaxgcrl accrl \
             --env $ENV \
             --action_chunk_length $action_chunk_length \
