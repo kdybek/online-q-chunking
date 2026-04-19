@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:1
-#SBATCH --time=01:00:00
+#SBATCH --time=10:00:00
 #SBATCH --account=plgcrlreason-gpu-gh200
 #SBATCH --partition=plgrid-gpu-gh200
 #SBATCH --output=logs/%x_%j.out
