@@ -634,6 +634,8 @@ class ACCRL:
             training_state, env_state, buffer_state, prefill_key
         )
 
+        receding_horizons = [1, 3, 5, 10, 15, 30]
+        receding_horizons = [h for h in receding_horizons if h <= self.action_chunk_length]
         """Setting up evaluators"""
         evaluators = [
             ChunkedActorEvaluator(
@@ -644,7 +646,7 @@ class ACCRL:
                 num_eval_envs=config.num_eval_envs,
                 episode_length=config.episode_length,
                 key=eval_env_key,
-            ) for receding_horizon in range(1, self.action_chunk_length + 1)
+            ) for receding_horizon in receding_horizons
         ]
 
         training_walltime = 0
