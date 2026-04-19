@@ -27,6 +27,7 @@ FLAGS="--num_evals 200 \
   --total_env_steps 60000000 \
   --batch_size 256 \
   --num_envs 512 \
+  --num_eval_envs 512 \
   --discounting 0.99 \
   --action_repeat 1 \
   --unroll_length 62 \
