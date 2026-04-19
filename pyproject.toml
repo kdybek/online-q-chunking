@@ -7,9 +7,9 @@ license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
   "pip",
-  "jax[cuda13]",
+  "jax[cuda12]==0.7.2",
   "flax",
-  "brax",
+  "brax==0.12.5",
   "matplotlib",
   "mujoco",
   "mujoco-mjx",
