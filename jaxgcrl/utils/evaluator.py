@@ -180,10 +180,11 @@ class ActorEvaluator:
 class ChunkedActorEvaluator:
     """Single GPU evaluator that evaluates an arbitrary chunked actor function. Used by the ACCRL agent."""
 
-    def __init__(self, get_actions, action_step, receding_horizon, eval_env, num_eval_envs, episode_length, key):
+    def __init__(self, get_actions, action_step, receding_horizon, eval_env, num_eval_envs, episode_length, key, full_chunk):
         self._key = key
         self._eval_walltime = 0.0
         self._receding_horizon = receding_horizon
+        self._full_chunk = full_chunk
 
         eval_env = envs.training.EvalWrapper(eval_env)
 
@@ -232,12 +233,10 @@ class ChunkedActorEvaluator:
 
         metric_names = [name for name in wanted_metric_names if name in available_metric_names]
 
-        prefix = f"eval/rh{self._receding_horizon}"
-
         for fn, suffix in aggregating_fns:
             metrics.update(
                 {
-                    f"{prefix}/episode_{name}{suffix}": (
+                    f"episode_{name}{suffix}": (
                         fn(eval_metrics.episode_metrics[name])
                         if aggregate_episodes
                         else eval_metrics.episode_metrics[name]
@@ -248,12 +247,18 @@ class ChunkedActorEvaluator:
 
         # We check in how many env there was at least one step where there was success
         if "success" in eval_metrics.episode_metrics:
-            metrics[f"{prefix}/episode_success_any"] = np.mean(eval_metrics.episode_metrics["success"] > 0.0)
+            metrics["episode_success_any"] = np.mean(eval_metrics.episode_metrics["success"] > 0.0)
 
-        metrics[f"{prefix}/avg_episode_length"] = np.mean(eval_metrics.episode_steps)
-        metrics[f"{prefix}/epoch_eval_time"] = epoch_eval_time
-        metrics[f"{prefix}/sps"] = self._steps_per_unroll / epoch_eval_time
+        metrics["avg_episode_length"] = np.mean(eval_metrics.episode_steps)
+        metrics["epoch_eval_time"] = epoch_eval_time
+        metrics["sps"] = self._steps_per_unroll / epoch_eval_time
         self._eval_walltime = self._eval_walltime + epoch_eval_time
-        metrics[f"{prefix}/walltime"] = self._eval_walltime
+        metrics["walltime"] = self._eval_walltime
+
+        metrics = {f"eval/rh{self._receding_horizon}/{key}": value for key, value in metrics.items()}
+
+        if self._full_chunk:
+            metrics_full_chunk = {f"eval/full_chunk/{key}": value for key, value in metrics.items()}
+            metrics = {**metrics, **metrics_full_chunk}
 
         return metrics

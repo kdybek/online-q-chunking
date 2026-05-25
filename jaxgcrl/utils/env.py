@@ -323,15 +323,28 @@ def render(make_policy, params, env, exp_dir, exp_name, num_steps):
     key = jax.random.PRNGKey(seed=1)
     key, subkey = jax.random.split(key)
     state = jit_env_reset(rng=subkey)
+    action_chunk_idx = 0
     for i in range(5000):
         rollout.append(state.pipeline_state)
         key, subkey = jax.random.split(key)
-        action, _ = jit_policy(state.obs[None], subkey)  # Policy requires batched dimension
-        action = action[0]  # Remove batch dimension
+
+        if action_chunk_idx == 0:
+            actions, _ = jit_policy(state.obs[None], subkey)  # Policy requires batched dimension
+            actions = actions[0]  # Remove batch dimension
+            action_chunk_len = actions.shape[0] if actions.ndim == 2 else 1
+
+        if actions.ndim == 1:
+            action = actions
+        elif actions.ndim == 2:
+            action = actions[action_chunk_idx]
+
+        action_chunk_idx = (action_chunk_idx + 1) % action_chunk_len
+
         state = jit_env_step(state, action)
         if i % 1000 == 0:
             key, subkey = jax.random.split(key)
             state = jit_env_reset(rng=subkey)
+            action_chunk_idx = 0
 
     url = html.render(env.sys.tree_replace({"opt.timestep": env.dt}), rollout, height=1024)
     with open(os.path.join(exp_dir, f"{exp_name}_{num_steps}.html"), "w") as file:

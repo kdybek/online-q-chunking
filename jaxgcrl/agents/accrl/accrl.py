@@ -646,6 +646,7 @@ class ACCRL:
                 num_eval_envs=config.num_eval_envs,
                 episode_length=config.episode_length,
                 key=eval_env_key,
+                full_chunk=receding_horizon == self.action_chunk_length,
             ) for receding_horizon in receding_horizons
         ]
 
@@ -698,7 +699,7 @@ class ACCRL:
                 make_policy,
                 training_state.actor_state.params,
                 unwrapped_env,
-                do_render=False,
+                do_render=do_render,
             )
 
             params = (
