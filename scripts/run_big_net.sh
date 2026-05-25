@@ -49,7 +49,7 @@ for seed in 0 1 2; do
             --wandb_group "big_net" \
             --exp_name "${ENV}_acl_${action_chunk_length}_seed_${seed}" \
             --n_hidden 6 \
-            --use_ln True \
+            --use_ln \
             $FLAGS
     done
 done
