@@ -175,9 +175,9 @@ def count_params(params):
 class ACCRL:
     """Contrastive Reinforcement Learning with Action Chunking (ACCRL) agent."""
 
-    policy_lr: float = 1e-4
-    critic_lr: float = 1e-4
-    alpha_lr: float = 1e-4
+    policy_lr: float = 3e-4
+    critic_lr: float = 3e-4
+    alpha_lr: float = 3e-4
     batch_size: int = 256
 
     action_chunk_length: int = 3
@@ -194,17 +194,17 @@ class ACCRL:
 
     max_replay_size: int = 10000
     min_replay_size: int = 1000
-    unroll_length: int = 62
+    unroll_length: int = 60
     h_dim: int = 256
-    n_hidden: int = 8
-    skip_connections: int = 2
+    n_hidden: int = 2
+    skip_connections: int = 4
     use_relu: bool = False
 
     # phi(s,a) and psi(g) repr dimension
-    repr_dim: int = 128
+    repr_dim: int = 64
 
     # layer norm
-    use_ln: bool = True
+    use_ln: bool = False
 
     contrastive_loss_fn: Literal["fwd_infonce", "sym_infonce", "bwd_infonce", "binary_nce"] = "fwd_infonce"
     energy_fn: Literal["norm", "l2", "dot", "cosine"] = "norm"
