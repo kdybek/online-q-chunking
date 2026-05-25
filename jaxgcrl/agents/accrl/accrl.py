@@ -191,6 +191,7 @@ class ACCRL:
     train_step_multiplier: int = 1
 
     disable_entropy_actor: bool = False
+    target_entropy_coeff: float = 1.0
 
     max_replay_size: int = 10000
     min_replay_size: int = 1000
@@ -335,7 +336,7 @@ class ACCRL:
         )
 
         # Entropy coefficient
-        target_entropy = -0.5 * action_chunk_size
+        target_entropy = -0.5 * action_chunk_size * self.target_entropy_coeff
         log_alpha = jnp.asarray(0.0, dtype=jnp.float32)
         alpha_state = TrainState.create(
             apply_fn=None,
