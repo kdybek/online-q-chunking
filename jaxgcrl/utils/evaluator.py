@@ -255,10 +255,12 @@ class ChunkedActorEvaluator:
         self._eval_walltime = self._eval_walltime + epoch_eval_time
         metrics["walltime"] = self._eval_walltime
 
-        metrics = {f"eval/rh{self._receding_horizon}/{key}": value for key, value in metrics.items()}
+        metrics_rh = {f"eval/rh{self._receding_horizon}/{key}": value for key, value in metrics.items()}
+        metrics_full_chunk = {}
 
         if self._full_chunk:
             metrics_full_chunk = {f"eval/full_chunk/{key}": value for key, value in metrics.items()}
-            metrics = {**metrics, **metrics_full_chunk}
 
-        return metrics
+        metrics_all = {**metrics_rh, **metrics_full_chunk}
+
+        return metrics_all
