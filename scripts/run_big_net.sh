@@ -24,7 +24,7 @@ cp -rf ~/online-q-chunking/* .
 source .venv/bin/activate
 
 FLAGS="--num_evals 64 \
-  --total_env_steps 100000000 \
+  --total_env_steps 120000000 \
   --batch_size 256 \
   --num_envs 512 \
   --num_eval_envs 512 \
