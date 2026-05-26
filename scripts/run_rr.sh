@@ -52,5 +52,3 @@ for seed in 0 1 2; do
             $FLAGS
     done
 done
-
-rm -rf $VENV
