@@ -47,7 +47,7 @@ for seed in 0 1 2; do
             --action_chunk_length $action_chunk_length \
             --seed $seed \
             --random_replanning \
-            --wandb_group "random_replanning" \
+            --wandb_group "random_replanning_2" \
             --exp_name "${ENV}_acl_${action_chunk_length}_seed_${seed}" \
             $FLAGS
     done

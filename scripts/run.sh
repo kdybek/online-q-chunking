@@ -46,7 +46,7 @@ for seed in 0 1 2; do
             --env $ENV \
             --action_chunk_length $action_chunk_length \
             --seed $seed \
-            --wandb_group "online_q_chunking" \
+            --wandb_group "base" \
             --exp_name "${ENV}_acl_${action_chunk_length}_seed_${seed}" \
             $FLAGS
     done
