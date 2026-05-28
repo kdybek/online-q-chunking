@@ -651,6 +651,31 @@ class ACCRL:
             ) for receding_horizon in receding_horizons
         ]
 
+        # Run initial eval
+        metrics = {}
+        for evaluator in evaluators:
+            eval_metrics = evaluator.run_evaluation(training_state)
+            metrics.update(eval_metrics)
+
+        key, sensitivity_key = jax.random.split(key)
+        sensitivity_metrics = compute_action_sensitivity_metrics(
+            buffer_state,
+            training_state.critic_state.params,
+            sensitivity_key,
+        )
+        metrics.update(sensitivity_metrics)
+
+        make_policy = lambda param: lambda obs, rng: actor.apply(param, obs)
+
+        progress_fn(
+            0,
+            eval_metrics,
+            make_policy,
+            training_state.actor_state.params,
+            unwrapped_env,
+            do_render=True,
+        )
+
         training_walltime = 0
         logging.info("starting training....")
         for ne in range(config.num_evals):
