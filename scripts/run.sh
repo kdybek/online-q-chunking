@@ -64,7 +64,6 @@ if [[ -z "$group" ]]; then
 fi
 
 FLAGS="--num_evals 64 \
-  --batch_size 256 \
   --num_envs 512 \
   --num_eval_envs 512 \
   --discounting 0.99 \
@@ -82,9 +81,9 @@ if [[ $random_replanning -eq 1 ]]; then
 fi
 
 if [[ $big_net -eq 1 ]]; then
-    FLAGS="$FLAGS --total_env_steps 120000000 --n_hidden 6 --use_ln"
+    FLAGS="$FLAGS --total_env_steps 100000000 --batch_size 512 --n_hidden 8 --use_ln"
 else
-    FLAGS="$FLAGS --total_env_steps 60000000"
+    FLAGS="$FLAGS --total_env_steps 60000000 --batch_size 256 --n_hidden 2"
 fi
 
 for seed in 0 1 2 3 4; do
