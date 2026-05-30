@@ -18,6 +18,7 @@ export XDG_CACHE_HOME=$SCRATCH/.cache
 export WANDB_API_KEY=$(cat ~/.wandb_key)
 export MUJOCO_GL=egl
 
+mkdir -p $SCRATCH/online-q-chunking
 cd $SCRATCH/online-q-chunking
 cp -rf ~/online-q-chunking/* .
 
