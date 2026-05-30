@@ -35,7 +35,6 @@ def contrastive_loss_fn(name, logits):
 def update_actor_and_alpha(config, networks, transitions, training_state, key):
     def actor_loss(actor_params, critic_params, log_alpha, transitions, key):
         state = transitions.state
-        goal = transitions.goal
         future_state = transitions.extras["future_state"]
         goal = future_state[:, config["goal_indices"]]
         observation = jnp.concatenate([state, goal], axis=1)
@@ -47,7 +46,7 @@ def update_actor_and_alpha(config, networks, transitions, training_state, key):
         x_ts = means + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype)
         action = nn.tanh(x_ts)
         log_prob = jax.scipy.stats.norm.logpdf(x_ts, loc=means, scale=stds)
-        log_prob -= jnp.log((1 - jnp.square(action)) + 1e-6)
+        log_prob -= 2 * (jnp.log(2.0) - x_ts - nn.softplus(-2.0 * x_ts))
         log_prob = log_prob.sum(-1)  # dimension = B
 
         sa_encoder_params, g_encoder_params = (
