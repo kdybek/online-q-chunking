@@ -26,6 +26,7 @@ source .venv/bin/activate
 env=""
 group=""
 random_replanning=0
+action_shuffling=0
 big_net=0
 
 while [[ $# -gt 0 ]]; do
@@ -40,6 +41,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --random_replanning)
       random_replanning=1
+      shift
+      ;;
+    --action_shuffling)
+      action_shuffling=1
       shift
       ;;
     --big_net)
@@ -78,6 +83,10 @@ FLAGS="--num_evals 64 \
 
 if [[ $random_replanning -eq 1 ]]; then
     FLAGS="$FLAGS --random_replanning"
+fi
+
+if [[ $action_shuffling -eq 1 ]]; then
+    FLAGS="$FLAGS --action_shuffling"
 fi
 
 if [[ $big_net -eq 1 ]]; then
