@@ -59,8 +59,9 @@ class CRLTransition(NamedTuple):
 
 
 @functools.partial(jax.jit, static_argnames=("buffer_config",))
-def flatten_batch(buffer_config, transition, sample_key):
-    gamma, state_size, goal_indices, action_chunk_length = buffer_config
+def flatten_batch(buffer_config, transition, key):
+    sample_key, shuffle_key = jax.random.split(key)
+    gamma, state_size, goal_indices, action_chunk_length, shuffle_actions = buffer_config
 
     # Because it's vmaped transition.obs.shape is of shape (episode_len, obs_dim)
     seq_len = transition.observation.shape[0]
@@ -134,6 +135,13 @@ def flatten_batch(buffer_config, transition, sample_key):
         mask[..., None],
         gathered_actions,
         jnp.zeros_like(gathered_actions),
+    )
+
+    perm = jax.random.permutation(shuffle_key, action_chunk_length)
+    gathered_actions = jax.lax.cond(
+        shuffle_actions,
+        lambda: jnp.take(gathered_actions, perm, axis=-2),
+        lambda: gathered_actions,
     )
 
     flat_action_chunk = jnp.reshape(gathered_actions, (seq_len, -1))[:-1]  # (seq_len-1, action_chunk_length * action_size)
@@ -214,6 +222,7 @@ class ACCRL:
     action_noise_std: float = 0.0
 
     random_replanning: bool = False
+    action_shuffling: bool = False
 
     def check_config(self, config):
         """
@@ -526,7 +535,7 @@ class ACCRL:
             sampling_key, permutation_key = jax.random.split(key)
             batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
             crl_transitions = jax.vmap(flatten_batch, in_axes=(None, 0, 0))(
-                (self.discounting, state_size, train_env.goal_indices, self.action_chunk_length),
+                (self.discounting, state_size, train_env.goal_indices, self.action_chunk_length, self.action_shuffling),
                 transitions,
                 batch_keys,
             )
